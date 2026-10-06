@@ -9,10 +9,10 @@ function floor(id: string, r: number, dx: number, dy: number, w = 1000, h = 800)
 
 function sampleMap(): GameMap {
   const markers: Marker[] = [
-    { id: 'm1', type: 'camera', label: '1층 카메라', scope: { kind: 'floor', floorId: 'F1', p: vec(100, 200) } },
-    { id: 'm2', type: 'note', label: '2층 메모', scope: { kind: 'floor', floorId: 'F2', p: vec(500, 400) } },
-    { id: 'm3', type: 'connector', label: '해치', scope: { kind: 'through', floorIds: ['F1', 'F2', 'F3'], w: vec(300, 300) } },
-    { id: 'm4', type: 'objective', label: '계단', scope: { kind: 'through', floorIds: ['F2', 'F3'], w: vec(700, 100) } },
+    { id: 'm1', type: 'camera', label: '1층 카메라', scope: { kind: 'floor', floorId: 'F1', p: vec(100, 200) }, createdAt: 1 },
+    { id: 'm2', type: 'note', label: '2층 메모', scope: { kind: 'floor', floorId: 'F2', p: vec(500, 400) }, createdAt: 2 },
+    { id: 'm3', type: 'connector', label: '해치', scope: { kind: 'through', floorIds: ['F1', 'F2', 'F3'], w: vec(300, 300) }, createdAt: 3 },
+    { id: 'm4', type: 'objective', label: '계단', scope: { kind: 'through', floorIds: ['F2', 'F3'], w: vec(700, 100) }, createdAt: 4 },
   ];
   return {
     id: 'map',

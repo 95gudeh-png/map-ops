@@ -28,5 +28,54 @@ body {
 }
 .logo { font-weight: 700; letter-spacing: 0.5px; font-size: 15px; }
 .logo span { color: var(--accent); }
+.topbar-extra { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.sync-state { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+.sync-state .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
 .app { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .dim { color: var(--text-dim); font-size: 13px; }
+
+/* 버튼 */
+button { font-family: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
+.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font-size: 13px; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn.small { padding: 6px 10px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0a1622; font-weight: 600; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #1a0a0b; font-weight: 600; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn.ghost:hover:not(:disabled) { color: var(--text); }
+.icon-btn { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 2px 6px; border-radius: 4px; line-height: 1; }
+.icon-btn:hover { color: var(--text); background: var(--panel2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 맵 선택 */
+.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
+.section-head h2 { margin: 0; font-size: 16px; }
+.section-actions { display: flex; gap: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.mapcard { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.mapcard:hover, .mapcard:focus-within { border-color: var(--accent); }
+.mapcard-main { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 14px; background: none; border: none; color: inherit; text-align: left; border-radius: 10px; }
+.mapcard .thumb { height: 110px; border-radius: 6px; background: var(--panel2); overflow: hidden; }
+.mapcard .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mapcard .name { font-weight: 600; font-size: 14px; padding-right: 22px; }
+.mapcard .meta { font-size: 12px; color: var(--text-dim); }
+.card-menu { position: absolute; right: 8px; bottom: 30px; }
+.menu { position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 10; min-width: 160px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 5px; }
+.menu button:hover:not(:disabled) { background: var(--panel2); }
+.danger-text { color: var(--danger) !important; }
+.addcard { border: 1.5px dashed var(--line); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 180px; background: transparent; color: var(--text-dim); font-size: 13px; }
+.addcard:hover { border-color: var(--accent); color: var(--accent); }
+.addcard .plus { font-size: 28px; line-height: 1; }
+.emptynote { color: var(--text-dim); font-size: 13px; margin-top: 10px; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; border: 1px solid; }
+.notice.ok { border-color: var(--ok); background: rgba(79, 191, 131, 0.08); }
+.notice.error { border-color: var(--danger); background: rgba(224, 85, 90, 0.08); }
+
+/* 대화상자 */
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: 420px; max-width: 100%; padding: 22px; }
+.dialog h3 { margin: 0 0 8px; font-size: 16px; }
+.dialog p { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

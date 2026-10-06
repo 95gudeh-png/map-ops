@@ -48,6 +48,8 @@ export interface Marker {
   type: MarkerType;
   label: string;
   scope: MarkerScope;
+  /** 목록 정렬용(ms). */
+  createdAt: number;
 }
 
 export interface GameMap {
