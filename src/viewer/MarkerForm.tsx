@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Vec } from '../geometry';
-import { MARKER_TYPES, type GameMap, type Id, type Marker, type MarkerType } from '../model';
+import { MARKER_TYPES, markerColor, type GameMap, type Id, type Marker, type MarkerType } from '../model';
 import type { MarkerInput } from './markerOps';
 
 interface Props {
@@ -50,7 +50,7 @@ export function MarkerForm({ map, w, originFloorId, editing, onSubmit, onCancel 
             role="radio"
             aria-checked={type === t}
             className={type === t ? 'on' : ''}
-            style={{ ['--mk' as string]: MARKER_TYPES[t].color }}
+            style={{ ['--mk' as string]: markerColor(map.markerStyle, t) }}
             onClick={() => setType(t)}
           >
             <span className="swatch" />

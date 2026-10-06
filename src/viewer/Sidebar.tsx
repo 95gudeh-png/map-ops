@@ -1,5 +1,5 @@
 import { markerOnFloor, markerWorld } from '../mapOps';
-import { MARKER_TYPES, type GameMap, type Id, type Marker } from '../model';
+import { MARKER_TYPES, markerColor, type GameMap, type Id, type Marker } from '../model';
 import type { Vec } from '../geometry';
 import { throughFloorsLabel } from './markerOps';
 
@@ -27,7 +27,7 @@ export function Sidebar({ map, floorId, selectedId, onHover, onSelect, onEdit, o
       onPointerLeave={() => onHover(null)}
     >
       <button className="mk-main" onClick={() => onSelect(m)} title="이 위치 선택">
-        <span className={`mk-dot ${m.scope.kind}`} style={{ ['--mk' as string]: MARKER_TYPES[m.type].color }} />
+        <span className={`mk-dot ${m.scope.kind}`} style={{ ['--mk' as string]: markerColor(map.markerStyle, m.type) }} />
         <span className="lbl">
           {m.label || MARKER_TYPES[m.type].label}
           {m.scope.kind === 'through' && <span className="sub">{throughFloorsLabel(map, m)}</span>}

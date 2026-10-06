@@ -8,7 +8,7 @@ import {
   type Vec,
   type View,
 } from './geometry';
-import type { Floor, GameMap, Id, Marker } from './model';
+import type { Floor, GameMap, Id, Marker, Stroke } from './model';
 
 export function findFloor(map: GameMap, floorId: Id): Floor | undefined {
   return map.floors.find((f) => f.id === floorId);
@@ -86,7 +86,12 @@ export function removeFloor(map: GameMap, floorId: Id): RemoveFloorResult {
   }
 
   return {
-    map: { ...cur, floors: cur.floors.filter((f) => f.id !== floorId), markers },
+    map: {
+      ...cur,
+      floors: cur.floors.filter((f) => f.id !== floorId),
+      markers,
+      ...(cur.strokes ? { strokes: cur.strokes.filter((s) => s.floorId !== floorId) } : {}),
+    },
     removedMarkers,
   };
 }
@@ -118,7 +123,16 @@ export function mergeEditedMap(initial: GameMap, draft: GameMap, current: GameMa
       if (ids.length) markers.push({ ...m, scope: { ...m.scope, floorIds: ids } });
     }
   }
-  return { ...draft, markers };
+  // 낙서도 같은 규칙: 초안 값 우선, 편집 중 새로 생긴 획은 층이 남아 있으면 유지
+  const draftStrokes = new Map((draft.strokes ?? []).map((s) => [s.id, s]));
+  const initialStrokes = new Set((initial.strokes ?? []).map((s) => s.id));
+  const strokes: Stroke[] = [];
+  for (const s of current.strokes ?? []) {
+    const d = draftStrokes.get(s.id);
+    if (d) strokes.push(d);
+    else if (!initialStrokes.has(s.id) && floorIds.has(s.floorId)) strokes.push(s);
+  }
+  return { ...draft, markers, strokes };
 }
 
 export interface NewImage {
@@ -149,6 +163,14 @@ export function replaceFloorImage(
         ? { ...m, scope: { ...m.scope, p: rep.local(m.scope.p) } }
         : m,
     ),
+    // 그 층 낙서도 새 이미지 픽셀로(같은 화면 위치·굵기 유지)
+    ...(map.strokes
+      ? {
+          strokes: map.strokes.map((s) =>
+            s.floorId === floorId ? { ...s, width: s.width / k, points: s.points.map((v) => v / k) } : s,
+          ),
+        }
+      : {}),
   };
   // 기준층이면 항등으로 되돌린다.
   if (map.anchorFloorId === floorId) next = changeAnchor(next, floorId).map;

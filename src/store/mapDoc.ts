@@ -6,11 +6,13 @@
  * - floorOrder: Y.Array<Id>        층 순서
  * - floors:     Y.Map<Id, Floor>   층 객체(통째로 교체)
  * - markers:    Y.Map<Id, Marker>  마커 객체(통째로 교체)
+ * - strokes:    Y.Map<Id, Stroke>  층별 낙서 획(통째로 교체)
+ * - meta.markerStyle               맵별 마커 표시 설정
  *
  * 서로 다른 마커·층의 동시 편집은 병합되고, 같은 항목을 동시에 바꾸면 한쪽이 이긴다.
  */
 import * as Y from 'yjs';
-import type { Floor, GameMap, Id, Marker } from '../model';
+import type { Floor, GameMap, Id, Marker, MarkerStyle, Stroke } from '../model';
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -24,15 +26,18 @@ export function readMap(doc: Y.Doc, id: Id): GameMap | null {
     .toArray()
     .map((fid) => floorsMap.get(fid))
     .filter((f): f is Floor => !!f);
-  const markers = Array.from(doc.getMap<Marker>('markers').values()).sort(
-    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1),
-  );
+  const byTime = <T extends { createdAt: number; id: Id }>(a: T, b: T) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+  const markers = Array.from(doc.getMap<Marker>('markers').values()).sort(byTime);
+  const strokes = Array.from(doc.getMap<Stroke>('strokes').values()).sort(byTime);
+  const markerStyle = meta.get('markerStyle') as MarkerStyle | undefined;
   return {
     id,
     name,
     anchorFloorId: (meta.get('anchorFloorId') as Id) ?? floors[0]?.id ?? '',
     floors,
     markers,
+    strokes,
+    ...(markerStyle ? { markerStyle } : {}),
     updatedAt: (meta.get('updatedAt') as number) ?? 0,
   };
 }
@@ -52,8 +57,12 @@ export function writeMap(doc: Y.Doc, map: GameMap): void {
       order.insert(0, ids);
     }
 
+    if (map.markerStyle && !same(meta.get('markerStyle'), map.markerStyle)) meta.set('markerStyle', map.markerStyle);
+
     syncEntries(doc.getMap<Floor>('floors'), map.floors);
     syncEntries(doc.getMap<Marker>('markers'), map.markers);
+    // strokes가 없는 맵 객체(이전 버전)로 저장해도 기존 낙서를 지우지 않는다
+    if (map.strokes) syncEntries(doc.getMap<Stroke>('strokes'), map.strokes);
   });
 }
 

@@ -52,11 +52,46 @@ export interface Marker {
   createdAt: number;
 }
 
+/** 층별 낙서 한 획. 좌표·굵기는 그 층 이미지 픽셀 단위(층과 함께 확대·이동). */
+export interface Stroke {
+  id: Id;
+  floorId: Id;
+  color: string;
+  /** 굵기(층 이미지 픽셀). */
+  width: number;
+  /** 평탄화한 좌표 [x0, y0, x1, y1, ...] (Yjs 저장량을 줄이려고 배열 하나로). */
+  points: number[];
+  createdAt: number;
+}
+
+export type MarkerOutline = 'dark' | 'light' | 'none';
+
+/** 맵별 마커 표시 설정. */
+export interface MarkerStyle {
+  /** 크기 배율(1 = 기본 14px). */
+  size: number;
+  opacity: number;
+  outline: MarkerOutline;
+  /** 이름표 글자 크기(px). */
+  labelSize: number;
+  /** 유형별 색 덮어쓰기. */
+  colors: Partial<Record<MarkerType, string>>;
+}
+
+export const DEFAULT_MARKER_STYLE: MarkerStyle = { size: 1, opacity: 1, outline: 'dark', labelSize: 11, colors: {} };
+
+export const markerColor = (style: MarkerStyle | undefined, type: MarkerType) =>
+  style?.colors[type] ?? MARKER_TYPES[type].color;
+
 export interface GameMap {
   id: Id;
   name: string;
   anchorFloorId: Id;
   floors: Floor[];
   markers: Marker[];
+  /** 층별 낙서(없으면 빈 배열로 취급 — 이전 버전 데이터 호환). */
+  strokes?: Stroke[];
+  /** 마커 표시 설정(없으면 기본값). */
+  markerStyle?: MarkerStyle;
   updatedAt: number;
 }

@@ -20,6 +20,7 @@ function sample(id = 'map-1'): GameMap {
       { id: 'm1', type: 'camera', label: '카메라', scope: { kind: 'floor', floorId: 'F1', p: vec(1, 2) }, createdAt: 1 },
       { id: 'm2', type: 'connector', label: '해치', scope: { kind: 'through', floorIds: ['F1', 'F2'], w: vec(3, 4) }, createdAt: 2 },
     ],
+    strokes: [],
     updatedAt: 100,
   };
 }
@@ -37,6 +38,22 @@ describe('mapDoc', () => {
     const doc = new Y.Doc();
     writeMap(doc, sample());
     expect(readMap(doc, 'map-1')).toEqual(sample());
+  });
+
+  it('낙서와 마커 설정도 저장된다', () => {
+    const doc = new Y.Doc();
+    const m: GameMap = {
+      ...sample(),
+      strokes: [{ id: 's1', floorId: 'F2', color: '#ffffff', width: 3, points: [1, 2, 3, 4], createdAt: 5 }],
+      markerStyle: { size: 1.6, opacity: 0.7, outline: 'light', labelSize: 14, colors: { note: '#123456' } },
+    };
+    writeMap(doc, m);
+    expect(readMap(doc, 'map-1')).toEqual(m);
+    // strokes 필드가 없는 객체로 저장해도 기존 낙서는 유지(이전 버전 호환)
+    const { strokes: _omit, ...legacy } = m;
+    void _omit;
+    writeMap(doc, legacy);
+    expect(readMap(doc, 'map-1')!.strokes).toHaveLength(1);
   });
 
   it('층 순서 변경과 삭제가 반영된다', () => {
@@ -94,6 +111,15 @@ describe('.mapops 파일', () => {
 
   it('올바른 파일은 통과', () => {
     expect(parseMapops(JSON.stringify(file())).map.name).toBe('은행');
+    const withExtras = {
+      ...file(),
+      map: {
+        ...sample(),
+        strokes: [{ id: 's', floorId: 'F1', color: '#ff4d4f', width: 3, points: [0, 0, 5, 5], createdAt: 1 }],
+        markerStyle: { size: 1.5, opacity: 0.8, outline: 'light', labelSize: 13, colors: { camera: '#00ff00' } },
+      },
+    };
+    expect(parseMapops(JSON.stringify(withExtras)).map.strokes).toHaveLength(1);
   });
 
   it.each([
@@ -103,6 +129,9 @@ describe('.mapops 파일', () => {
     ['없는 층을 가리키는 마커', JSON.stringify({ ...file(), map: { ...sample(), markers: [{ ...marker('x', 0), scope: { kind: 'floor', floorId: 'NOPE', p: vec(0, 0) } }] } })],
     ['기준층 없음', JSON.stringify({ ...file(), map: { ...sample(), anchorFloorId: 'NOPE' } })],
     ['음수 배율', JSON.stringify({ ...file(), map: { ...sample(), floors: [{ ...sample().floors[0]!, sim: { r: -1, d: vec(0, 0) } }] } })],
+    ['잘못된 낙서 색', JSON.stringify({ ...file(), map: { ...sample(), strokes: [{ id: 's', floorId: 'F1', color: 'red;x', width: 2, points: [0, 0], createdAt: 0 }] } })],
+    ['홀수 좌표 낙서', JSON.stringify({ ...file(), map: { ...sample(), strokes: [{ id: 's', floorId: 'F1', color: '#ffffff', width: 2, points: [0, 0, 1], createdAt: 0 }] } })],
+    ['마커 크기 범위 밖', JSON.stringify({ ...file(), map: { ...sample(), markerStyle: { size: 99, opacity: 1, outline: 'dark', labelSize: 11, colors: {} } } })],
   ])('잘못된 파일 거부: %s', (_, text) => {
     expect(() => parseMapops(text)).toThrow(/올바른 \.mapops 파일이 아니오/);
   });

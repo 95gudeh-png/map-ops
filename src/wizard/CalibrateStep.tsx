@@ -236,7 +236,11 @@ export function CalibrateStep({ draft, onChange, onBack, onFinish, finishLabel }
     // 오른쪽/가운데 버튼 또는 3-0은 화면 이동, 3-1/3-2의 왼쪽 버튼은 층 이동
     const mode = e.button !== 0 || !target ? 'pan' : 'floor';
     drag.current = { last: localPoint(e), mode, id: e.pointerId };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* 이미 끝난 포인터 — 캡처 없이 진행 */
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;

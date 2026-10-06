@@ -72,6 +72,25 @@ function checkMarker(m: unknown, i: number, floorIds: Set<string>): Marker {
   return m as unknown as Marker;
 }
 
+const isColor = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
+function checkStroke(s: unknown, i: number, floorIds: Set<string>) {
+  if (!isObj(s) || !isStr(s.id) || !isStr(s.floorId) || !floorIds.has(s.floorId)) return fail(`strokes[${i}]`);
+  if (!isColor(s.color) || !isNum(s.width) || s.width <= 0 || !isNum(s.createdAt)) fail(`strokes[${i}] 필드`);
+  if (!Array.isArray(s.points) || s.points.length < 2 || s.points.length % 2 !== 0 || !s.points.every(isNum))
+    fail(`strokes[${i}].points`);
+}
+
+function checkMarkerStyle(st: unknown) {
+  if (!isObj(st)) return fail('markerStyle');
+  if (!isNum(st.size) || st.size < 0.3 || st.size > 4) fail('markerStyle.size');
+  if (!isNum(st.opacity) || st.opacity < 0.1 || st.opacity > 1) fail('markerStyle.opacity');
+  if (!['dark', 'light', 'none'].includes(st.outline as string)) fail('markerStyle.outline');
+  if (!isNum(st.labelSize) || st.labelSize < 8 || st.labelSize > 24) fail('markerStyle.labelSize');
+  if (!isObj(st.colors) || !Object.entries(st.colors).every(([k, v]) => MARKER_KINDS.includes(k as MarkerType) && isColor(v)))
+    fail('markerStyle.colors');
+}
+
 /** 파싱 + 구조 검증. 실패하면 사용자에게 보여줄 한국어 메시지로 throw. */
 export function parseMapops(text: string): MapopsFile {
   let raw: unknown;
@@ -90,6 +109,11 @@ export function parseMapops(text: string): MapopsFile {
   if (!floorIds.has(map.anchorFloorId)) fail('기준층 없음');
   if (!Array.isArray(map.markers)) return fail('markers');
   map.markers.forEach((m, i) => checkMarker(m, i, floorIds));
+  if (map.strokes !== undefined) {
+    if (!Array.isArray(map.strokes)) return fail('strokes');
+    map.strokes.forEach((s, i) => checkStroke(s, i, floorIds));
+  }
+  if (map.markerStyle !== undefined) checkMarkerStyle(map.markerStyle);
   const images = raw.images;
   if (!isObj(images)) return fail('images');
   for (const f of floors) {

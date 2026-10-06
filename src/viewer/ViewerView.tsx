@@ -2,16 +2,49 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { fitView, floorWorldRect, panView, zoomViewAt, type Size, type Vec, type View } from '../geometry';
 import { markerWorld } from '../mapOps';
-import type { GameMap, Id, Marker } from '../model';
+import { DEFAULT_MARKER_STYLE, newId, type GameMap, type Id, type Marker, type MarkerStyle } from '../model';
 import { SharePanel } from '../share/SharePanel';
 import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { loadCrosshair, saveCrosshair, type CrosshairSettings } from './crosshair';
+import { addStroke, clearFloorStrokes, deleteStroke, flatten, PEN_COLORS, PEN_WIDTHS, strokesOnFloor } from './drawOps';
+import { DrawToolbar } from './DrawToolbar';
 import { MarkerForm } from './MarkerForm';
 import { addMarker, deleteMarker, moveMarker, updateMarker, type MarkerInput } from './markerOps';
-import { Panel, type Painter, type PanelShared } from './Panel';
+import { MarkerStylePanel } from './MarkerStylePanel';
+import { Panel, type Painter, type PanelShared, type PenSettings, type Tool } from './Panel';
 import { Sidebar } from './Sidebar';
+
+/* ---------- 기기별 그리기 설정 ---------- */
+const PEN_KEY = 'mapops.pen';
+const SHOW_DRAWINGS_KEY = 'mapops.showDrawings';
+function loadPen(): PenSettings {
+  try {
+    const v = JSON.parse(localStorage.getItem(PEN_KEY) ?? 'null') as PenSettings | null;
+    if (v && /^#[0-9a-f]{6}$/i.test(v.color) && PEN_WIDTHS.includes(v.width)) return v;
+  } catch {
+    /* 무시 */
+  }
+  return { color: PEN_COLORS[0]!, width: PEN_WIDTHS[1]! };
+}
+function savePref(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* 저장 불가 — 이번에만 적용 */
+  }
+}
+function loadShowDrawings(): boolean {
+  try {
+    return localStorage.getItem(SHOW_DRAWINGS_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+const STYLE_SAVE_DELAY = 300;
+const OUTLINE_COLORS = { dark: '#0c0e12', light: '#ffffff', none: 'transparent' } as const;
 
 interface Props {
   map: GameMap;
@@ -42,6 +75,15 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
   const shareState = useShareState(map.id);
   const remoteProbes = useRemoteProbes(map.id);
+  const [tool, setTool] = useState<Tool>('view');
+  const [pen, setPen] = useState<PenSettings>(loadPen);
+  const [showDrawings, setShowDrawings] = useState(loadShowDrawings);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
+  const [liveStyle, setLiveStyle] = useState<MarkerStyle>(map.markerStyle ?? DEFAULT_MARKER_STYLE);
+  /** 이 기기에서 그린 획(되돌리기용, 최근 것이 끝). */
+  const myStrokes = useRef<Id[]>([]);
+  const [undoCount, setUndoCount] = useState(0);
 
   // 층이 삭제·변경돼도 유효한 층을 가리키도록
   const valid = (id: Id) => (map.floors.some((f) => f.id === id) ? id : firstId);
@@ -71,6 +113,11 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   const mapRef = useRef(map);
   mapRef.current = map;
+  /**
+   * 저장 직전의 최신 맵. 저장소 캐시는 쓰는 즉시 갱신되므로, 화면 재렌더 전에 연달아 저장해도
+   * (빠른 연속 획, 지우개로 여러 획) 앞의 변경을 덮어쓰지 않는다.
+   */
+  const latestMap = useCallback(() => repo.getMap(mapRef.current.id) ?? mapRef.current, []);
   const fit = useCallback(() => {
     const m = mapRef.current;
     const anchor = m.floors.find((f) => f.id === m.anchorFloorId) ?? m.floors[0];
@@ -116,7 +163,7 @@ export function ViewerView({ map, onEditMap }: Props) {
   const onProbe = useCallback((w: Vec, floorId: Id) => {
     const mv = movingRef.current;
     if (mv) {
-      repo.saveMap(moveMarker(mapRef.current, mv.id, w));
+      repo.saveMap(moveMarker(latestMap(), mv.id, w));
       setMoving(null);
       setSelectedMarker(mv.id);
       setProbe({ w, floorId });
@@ -125,7 +172,76 @@ export function ViewerView({ map, onEditMap }: Props) {
     setForm(null);
     setSelectedMarker(null);
     setProbe({ w, floorId });
-  }, []);
+  }, [latestMap]);
+
+  /* ---------- 그리기 ---------- */
+  const onStrokeDone = useCallback(
+    (floorId: Id, points: Vec[], width: number, color: string) => {
+      const id = newId();
+      repo.saveMap(addStroke(latestMap(), { id, floorId, color, width, points: flatten(points), createdAt: Date.now() }));
+      myStrokes.current.push(id);
+      setUndoCount(myStrokes.current.length);
+    },
+    [latestMap],
+  );
+  const onEraseStroke = useCallback((id: Id) => repo.saveMap(deleteStroke(latestMap(), id)), [latestMap]);
+  const undo = useCallback(() => {
+    const m = latestMap();
+    // 이미 지워진(지우개·친구) 획은 건너뛴다
+    while (myStrokes.current.length) {
+      const id = myStrokes.current.pop()!;
+      if ((m.strokes ?? []).some((s) => s.id === id)) {
+        repo.saveMap(deleteStroke(m, id));
+        break;
+      }
+    }
+    setUndoCount(myStrokes.current.length);
+  }, [latestMap]);
+
+  const changeTool = (t: Tool) => {
+    setTool(t);
+    if (t !== 'view') {
+      setProbe(null);
+      setForm(null);
+      setMoving(null);
+      setSettingsOpen(false);
+    }
+  };
+  const changePen = (p: PenSettings) => {
+    setPen(p);
+    savePref(PEN_KEY, p);
+  };
+  const changeShowDrawings = (v: boolean) => {
+    setShowDrawings(v);
+    savePref(SHOW_DRAWINGS_KEY, v);
+  };
+
+  /* ---------- 마커 모양 ---------- */
+  const styleTimer = useRef<number | undefined>(undefined);
+  const styleDirty = useRef(false);
+  // 저장 대기 중이 아닐 때만 다른 사람의 변경을 반영
+  useEffect(() => {
+    if (!styleDirty.current) setLiveStyle(map.markerStyle ?? DEFAULT_MARKER_STYLE);
+  }, [map.markerStyle]);
+  // 최신 값에 합친 결과를 참조로도 들고 있어야 연속 조작·지연 저장이 서로 덮어쓰지 않는다
+  const liveStyleRef = useRef(liveStyle);
+  liveStyleRef.current = liveStyle;
+  const applyStyle = (next: MarkerStyle) => {
+    liveStyleRef.current = next;
+    setLiveStyle(next);
+    styleDirty.current = true;
+    window.clearTimeout(styleTimer.current);
+    styleTimer.current = window.setTimeout(() => {
+      styleDirty.current = false;
+      repo.saveMap({ ...latestMap(), markerStyle: liveStyleRef.current });
+    }, STYLE_SAVE_DELAY);
+  };
+  const changeStyle = (patch: Partial<MarkerStyle>) => {
+    const prev = liveStyleRef.current;
+    applyStyle({ ...prev, ...patch, colors: { ...prev.colors, ...patch.colors } });
+  };
+  const resetStyle = () => applyStyle(DEFAULT_MARKER_STYLE);
+  useEffect(() => () => window.clearTimeout(styleTimer.current), []);
   const onMarkerClick = useCallback((m: Marker, floorId: Id) => {
     const w = markerWorld(mapRef.current, m);
     if (!w) return;
@@ -140,8 +256,15 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || (e.target as HTMLElement).closest('input, textarea, form')) return;
-      if (moving) setMoving(null);
+      if (e.target instanceof Element && e.target.closest('input, textarea, form')) return;
+      if (tool !== 'view' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (e.key !== 'Escape') return;
+      if (tool !== 'view') setTool('view');
+      else if (moving) setMoving(null);
       else if (form) setForm(null);
       else if (settingsOpen) setSettingsOpen(false);
       else {
@@ -151,17 +274,17 @@ export function ViewerView({ map, onEditMap }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [moving, form, settingsOpen]);
+  }, [moving, form, settingsOpen, tool, undo]);
 
   /* ---------- 마커 저장 ---------- */
   const submitForm = (input: MarkerInput) => {
     if (!form) return;
     if (form.mode === 'add') {
-      const r = addMarker(map, input);
+      const r = addMarker(latestMap(), input);
       repo.saveMap(r.map);
       setSelectedMarker(r.marker.id);
     } else {
-      repo.saveMap(updateMarker(map, form.marker.id, input));
+      repo.saveMap(updateMarker(latestMap(), form.marker.id, input));
     }
     setForm(null);
   };
@@ -176,12 +299,31 @@ export function ViewerView({ map, onEditMap }: Props) {
   const floorById = (id: Id) => map.floors.find((f) => f.id === id)!;
   const idx = map.floors.findIndex((f) => f.id === curFloor);
   const ghostFloor = ghost && !split && idx > 0 ? map.floors[idx - 1] : undefined;
-  const crossStyle = { '--ch-len': `${crosshair.length}px`, '--ch-thick': `${crosshair.thickness}px`, '--ch-color': crosshair.color } as CSSProperties;
+  const rootStyle = {
+    '--ch-len': `${crosshair.length}px`,
+    '--ch-thick': `${crosshair.thickness}px`,
+    '--ch-color': crosshair.color,
+    '--mk-scale': liveStyle.size,
+    '--mk-opacity': liveStyle.opacity,
+    '--mk-outline': OUTLINE_COLORS[liveStyle.outline],
+    '--mk-label': `${liveStyle.labelSize}px`,
+  } as CSSProperties;
+  // 마커 색 미리보기를 위해 저장 전 설정을 덮어쓴 맵(바뀔 때만 새 객체 → Panel memo 유지)
+  const shownMap = useMemo(() => ({ ...map, markerStyle: liveStyle }), [map, liveStyle]);
+  const curStrokeCount = strokesOnFloor(map, curFloor).length;
+  // 내가 그린 획 중 아직 남아 있는 것이 있을 때만 되돌리기 가능(지우개·친구가 지운 것 제외)
+  const liveIds = new Set((map.strokes ?? []).map((s) => s.id));
+  const canUndo = undoCount > 0 && myStrokes.current.some((id) => liveIds.has(id));
 
   const panelProps = {
-    map,
+    map: shownMap,
     shared,
     showLabels,
+    showDrawings,
+    tool,
+    pen,
+    onStrokeDone,
+    onEraseStroke,
     selectedMarkerId: selectedMarker,
     registerPainter,
     onResize,
@@ -209,7 +351,7 @@ export function ViewerView({ map, onEditMap }: Props) {
   if (map.floors.length === 0) return <p className="dim">이 맵에는 층이 없소.</p>;
 
   return (
-    <div className={`viewer ${moving ? 'moving' : ''}`} style={crossStyle}>
+    <div className={`viewer ${moving ? 'moving' : ''} outline-${liveStyle.outline}`} style={rootStyle}>
       <div className="viewer-toolbar">
         <h2 className="map-title">{map.name}</h2>
         {!split && (
@@ -239,6 +381,12 @@ export function ViewerView({ map, onEditMap }: Props) {
         <button className="btn small" onClick={fit} title="확대/이동 초기화">
           ⤾ 보기 리셋
         </button>
+        <button className={`btn small ${tool !== 'view' ? 'primary' : ''}`} onClick={() => changeTool(tool === 'view' ? 'pen' : 'view')} aria-pressed={tool !== 'view'}>
+          ✏ 그리기
+        </button>
+        <button className="btn small" onClick={() => setStyleOpen((v) => !v)} aria-expanded={styleOpen}>
+          마커 모양
+        </button>
         <button className="btn small ghost" onClick={onEditMap}>
           맵 편집
         </button>
@@ -247,6 +395,22 @@ export function ViewerView({ map, onEditMap }: Props) {
         </button>
       </div>
       {shareOpen && <SharePanel mapId={map.id} onClose={() => setShareOpen(false)} />}
+      {styleOpen && <MarkerStylePanel style={liveStyle} onChange={changeStyle} onReset={resetStyle} onClose={() => setStyleOpen(false)} />}
+      {tool !== 'view' && (
+        <DrawToolbar
+          tool={tool}
+          pen={pen}
+          canUndo={canUndo}
+          floorStrokeCount={split ? 0 : curStrokeCount}
+          showDrawings={showDrawings}
+          onTool={changeTool}
+          onPen={changePen}
+          onUndo={undo}
+          onClearFloor={() => setConfirmClear(true)}
+          onShowDrawings={changeShowDrawings}
+          onDone={() => changeTool('view')}
+        />
+      )}
 
       {moving && (
         <div className="notice ok">
@@ -278,7 +442,7 @@ export function ViewerView({ map, onEditMap }: Props) {
             )}
           </div>
 
-          {probe && !moving && (
+          {probe && !moving && tool === 'view' && (
             <div className="probe-bar" role="toolbar" aria-label="선택 위치">
               <span className="dim">선택 위치</span>
               {!split &&
@@ -331,7 +495,7 @@ export function ViewerView({ map, onEditMap }: Props) {
             <div className="popover form-pop">
               <MarkerForm
                 key={form.mode === 'edit' ? form.marker.id : `${form.w.x},${form.w.y}`}
-                map={map}
+                map={shownMap}
                 w={form.mode === 'add' ? form.w : (markerWorld(map, form.marker) ?? { x: 0, y: 0 })}
                 originFloorId={form.mode === 'add' ? form.floorId : curFloor}
                 editing={form.mode === 'edit' ? form.marker : undefined}
@@ -344,7 +508,7 @@ export function ViewerView({ map, onEditMap }: Props) {
 
         {!split && (
           <Sidebar
-            map={map}
+            map={shownMap}
             floorId={curFloor}
             selectedId={selectedMarker}
             onHover={onHoverMarker}
@@ -359,6 +523,19 @@ export function ViewerView({ map, onEditMap }: Props) {
         )}
       </div>
 
+      {confirmClear && (
+        <ConfirmDialog
+          title="낙서 지우기"
+          message={`"${map.floors.find((f) => f.id === curFloor)?.name ?? ''}"의 낙서 ${curStrokeCount}개를 모두 지우겠소? 공유 중이면 상대 화면에서도 사라지오.`}
+          confirmLabel="모두 지우기"
+          danger
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            repo.saveMap(clearFloorStrokes(latestMap(), curFloor));
+            setConfirmClear(false);
+          }}
+        />
+      )}
       {pendingDelete && (
         <ConfirmDialog
           title="마커 삭제"
@@ -367,7 +544,7 @@ export function ViewerView({ map, onEditMap }: Props) {
           danger
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
-            repo.saveMap(deleteMarker(map, pendingDelete.id));
+            repo.saveMap(deleteMarker(latestMap(), pendingDelete.id));
             if (selectedMarker === pendingDelete.id) setSelectedMarker(null);
             setPendingDelete(null);
           }}
