@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GameMap } from '../model';
 import { shareManager } from '../share/shareManager';
-import { exportMapToFile } from '../store/exportImport';
+import { exportMapsToFile, exportMapToFile } from '../store/exportImport';
 import { imageSizes } from '../store/imageStore';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -38,6 +38,10 @@ export function StorageView({ onBack }: Props) {
   const [wipeOpen, setWipeOpen] = useState(false);
   const [wipeText, setWipeText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDelete, setBulkDelete] = useState(false);
+  // 지워졌거나 새로 생긴 맵을 반영(목록에 있는 것만 선택으로 침)
+  const selectedMaps = maps.filter((m) => selected.has(m.id));
 
   const refresh = useCallback(async () => {
     const est = (await navigator.storage?.estimate?.().catch(() => undefined)) ?? {};
@@ -145,12 +149,42 @@ export function StorageView({ onBack }: Props) {
 
       <section className="card">
         <h3>맵별 데이터 ({maps.length}개)</h3>
+        {maps.length > 0 && (
+          <div className="bulk-bar">
+            <span className="dim small">선택 {selectedMaps.length}개</span>
+            <button
+              className="btn small"
+              disabled={busy || selectedMaps.length === 0}
+              onClick={() => run(async () => (await exportMapsToFile(selectedMaps), `맵 ${selectedMaps.length}개를 파일 하나로 내보냈소.`))}
+            >
+              선택 내보내기
+            </button>
+            <button className="btn small ghost danger-text" disabled={busy || selectedMaps.length === 0} onClick={() => setBulkDelete(true)}>
+              선택 삭제
+            </button>
+            <span className="spacer" />
+            <button className="btn small" disabled={busy} onClick={() => run(async () => (await exportMapsToFile(maps), `맵 ${maps.length}개를 파일 하나로 내보냈소.`))}>
+              모두 내보내기
+            </button>
+          </div>
+        )}
         {maps.length === 0 ? (
           <p className="dim">저장된 맵이 없소.</p>
         ) : (
           <table className="data-table">
             <thead>
               <tr>
+                <th className="sel">
+                  <input
+                    type="checkbox"
+                    aria-label="모두 선택"
+                    checked={selectedMaps.length === maps.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedMaps.length > 0 && selectedMaps.length < maps.length;
+                    }}
+                    onChange={(e) => setSelected(new Set(e.target.checked ? maps.map((m) => m.id) : []))}
+                  />
+                </th>
                 <th>맵</th>
                 <th>층</th>
                 <th>마커</th>
@@ -162,7 +196,20 @@ export function StorageView({ onBack }: Props) {
             </thead>
             <tbody>
               {maps.map((m) => (
-                <tr key={m.id}>
+                <tr key={m.id} className={selected.has(m.id) ? 'selected' : ''}>
+                  <td className="sel">
+                    <input
+                      type="checkbox"
+                      aria-label={`${m.name} 선택`}
+                      checked={selected.has(m.id)}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(m.id);
+                        else next.delete(m.id);
+                        setSelected(next);
+                      }}
+                    />
+                  </td>
                   <td>
                     {m.name}
                     {shareManager.isIncluded(m.id) && <span className="badge small">세션</span>}
@@ -250,6 +297,27 @@ export function StorageView({ onBack }: Props) {
         )}
       </section>
 
+      {bulkDelete && (
+        <ConfirmDialog
+          title={`맵 ${selectedMaps.length}개 삭제`}
+          message={`${selectedMaps.map((m) => `"${m.name}"`).join(', ')}을(를) 삭제하겠소? 마커와 낙서가 함께 지워지며 되돌릴 수 없소. 공유 세션에서도 빠지오(친구가 받은 사본은 남소). 필요하면 먼저 "선택 내보내기"로 백업하시오.`}
+          confirmLabel="모두 삭제"
+          danger
+          onCancel={() => setBulkDelete(false)}
+          onConfirm={() => {
+            const targets = selectedMaps;
+            setBulkDelete(false);
+            void run(async () => {
+              for (const m of targets) {
+                shareManager.onMapDeleted(m.id);
+                await repo.deleteMap(m.id);
+              }
+              setSelected(new Set());
+              return `맵 ${targets.length}개를 삭제했소.`;
+            });
+          }}
+        />
+      )}
       {pendingDelete && (
         <ConfirmDialog
           title="맵 삭제"

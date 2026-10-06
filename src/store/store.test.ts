@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { vec } from '../geometry';
 import type { GameMap, Marker } from '../model';
 import { readMap, writeMap } from './mapDoc';
-import { base64ToBytes, bytesToBase64, MAPOPS_FORMAT, parseMapops } from './mapopsFile';
+import { base64ToBytes, buildBundle, bytesToBase64, MAPOPS_FORMAT, parseMapops } from './mapopsFile';
 import { Repo } from './repo';
 
 function sample(id = 'map-1'): GameMap {
@@ -110,7 +110,7 @@ describe('.mapops 파일', () => {
   });
 
   it('올바른 파일은 통과', () => {
-    expect(parseMapops(JSON.stringify(file())).map.name).toBe('은행');
+    expect(parseMapops(JSON.stringify(file())).maps[0]!.name).toBe('은행');
     const withExtras = {
       ...file(),
       map: {
@@ -119,7 +119,20 @@ describe('.mapops 파일', () => {
         markerStyle: { size: 1.5, opacity: 0.8, outline: 'light', labelSize: 13, colors: { camera: '#00ff00' } },
       },
     };
-    expect(parseMapops(JSON.stringify(withExtras)).map.strokes).toHaveLength(1);
+    expect(parseMapops(JSON.stringify(withExtras)).maps[0]!.strokes).toHaveLength(1);
+  });
+
+  it('묶음 파일(버전 2)은 여러 맵을 읽고, 버전 1 낱개 파일도 계속 읽는다', () => {
+    const images = file().images;
+    const bundle = buildBundle([sample('m-a'), { ...sample('m-b'), name: '공항' }], images);
+    const parsed = parseMapops(JSON.stringify(bundle));
+    expect(parsed.maps.map((m) => m.name)).toEqual(['은행', '공항']);
+    expect(parseMapops(JSON.stringify(file())).maps).toHaveLength(1); // file()은 버전 1 형식
+  });
+
+  it('묶음 안에 같은 맵이 두 번 있으면 거부', () => {
+    const bundle = buildBundle([sample('dup'), sample('dup')], file().images);
+    expect(() => parseMapops(JSON.stringify(bundle))).toThrow(/같은 맵이 두 번/);
   });
 
   it.each([

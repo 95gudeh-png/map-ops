@@ -5,7 +5,8 @@
 import type { Floor, GameMap, Marker, MarkerType } from '../model';
 
 export const MAPOPS_FORMAT = 'mapops';
-export const MAPOPS_VERSION = 1;
+/** 1: 맵 하나(map), 2: 여러 맵 묶음(maps[]). 읽기는 둘 다 지원. */
+export const MAPOPS_VERSION = 2;
 
 export interface MapopsImage {
   type: string;
@@ -14,11 +15,18 @@ export interface MapopsImage {
   data: string; // base64
 }
 
-export interface MapopsFile {
+/** 저장되는 파일(버전 2). */
+export interface MapopsBundleFile {
   format: typeof MAPOPS_FORMAT;
   version: number;
   exportedAt: number;
-  map: GameMap;
+  maps: GameMap[];
+  images: Record<string, MapopsImage>;
+}
+
+/** 읽은 결과(버전과 무관하게 묶음 형태). */
+export interface MapopsBundle {
+  maps: GameMap[];
   images: Record<string, MapopsImage>;
 }
 
@@ -92,7 +100,31 @@ function checkMarkerStyle(st: unknown) {
 }
 
 /** 파싱 + 구조 검증. 실패하면 사용자에게 보여줄 한국어 메시지로 throw. */
-export function parseMapops(text: string): MapopsFile {
+function checkMap(map: unknown, images: Record<string, unknown>, where: string): GameMap {
+  if (!isObj(map) || !isStr(map.id) || !isStr(map.name) || !isStr(map.anchorFloorId)) return fail(`${where}`);
+  if (!Array.isArray(map.floors) || map.floors.length === 0) return fail(`${where}: 층 없음`);
+  const floors = map.floors.map(checkFloor);
+  const floorIds = new Set(floors.map((f) => f.id));
+  if (!floorIds.has(map.anchorFloorId)) fail(`${where}: 기준층 없음`);
+  if (!Array.isArray(map.markers)) return fail(`${where}: markers`);
+  map.markers.forEach((m, i) => checkMarker(m, i, floorIds));
+  if (map.strokes !== undefined) {
+    if (!Array.isArray(map.strokes)) return fail(`${where}: strokes`);
+    map.strokes.forEach((s, i) => checkStroke(s, i, floorIds));
+  }
+  if (map.markerStyle !== undefined) checkMarkerStyle(map.markerStyle);
+  for (const f of floors) {
+    const img = images[f.imageId];
+    if (!isObj(img) || !isStr(img.data) || !isStr(img.type)) fail(`이미지 누락: ${map.name} / ${f.name}`);
+  }
+  return map as unknown as GameMap;
+}
+
+/**
+ * 파싱 + 구조 검증. 버전 1(맵 하나: map)과 버전 2(묶음: maps[])를 모두 읽어 묶음 형태로 돌려준다.
+ * 실패하면 사용자에게 보여줄 한국어 메시지로 throw.
+ */
+export function parseMapops(text: string): MapopsBundle {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -100,25 +132,18 @@ export function parseMapops(text: string): MapopsFile {
     return fail('JSON 해석 실패');
   }
   if (!isObj(raw) || raw.format !== MAPOPS_FORMAT) return fail('형식 표시 없음');
-  if (!isNum(raw.version) || raw.version > MAPOPS_VERSION) fail('지원하지 않는 버전');
-  const map = raw.map;
-  if (!isObj(map) || !isStr(map.id) || !isStr(map.name) || !isStr(map.anchorFloorId)) return fail('map');
-  if (!Array.isArray(map.floors) || map.floors.length === 0) return fail('층 없음');
-  const floors = map.floors.map(checkFloor);
-  const floorIds = new Set(floors.map((f) => f.id));
-  if (!floorIds.has(map.anchorFloorId)) fail('기준층 없음');
-  if (!Array.isArray(map.markers)) return fail('markers');
-  map.markers.forEach((m, i) => checkMarker(m, i, floorIds));
-  if (map.strokes !== undefined) {
-    if (!Array.isArray(map.strokes)) return fail('strokes');
-    map.strokes.forEach((s, i) => checkStroke(s, i, floorIds));
-  }
-  if (map.markerStyle !== undefined) checkMarkerStyle(map.markerStyle);
+  const version = raw.version;
+  if (!isNum(version) || version > MAPOPS_VERSION) return fail('지원하지 않는 버전(앱을 새로고침해 최신으로 쓰시오)');
   const images = raw.images;
   if (!isObj(images)) return fail('images');
-  for (const f of floors) {
-    const img = images[f.imageId];
-    if (!isObj(img) || !isStr(img.data) || !isStr(img.type)) fail(`이미지 누락: ${f.name}`);
-  }
-  return raw as unknown as MapopsFile;
+  const list = version >= 2 ? raw.maps : [raw.map];
+  if (!Array.isArray(list) || list.length === 0) return fail('맵 없음');
+  const maps = list.map((m, i) => checkMap(m, images, `maps[${i}]`));
+  if (new Set(maps.map((m) => m.id)).size !== maps.length) fail('같은 맵이 두 번 들어 있음');
+  return { maps, images: images as Record<string, MapopsImage> };
+}
+
+/** 여러 맵을 담은 파일 내용(버전 2). 이미지는 맵끼리 공유된다. */
+export function buildBundle(maps: GameMap[], images: Record<string, MapopsImage>, exportedAt = Date.now()): MapopsBundleFile {
+  return { format: MAPOPS_FORMAT, version: MAPOPS_VERSION, exportedAt, maps, images };
 }
