@@ -42,7 +42,11 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
     if (list.length === 0) return;
     void run(async () => {
       const names: string[] = [];
-      for (const f of list) names.push((await importMapopsFile(f)).name);
+      for (const f of list) {
+        const map = await importMapopsFile(f);
+        shareManager.onMapCreated(map.id);
+        names.push(map.name);
+      }
       return `가져왔소: ${names.join(', ')}`;
     });
   };
@@ -52,6 +56,7 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
       const { createSampleMap } = await import('../dev/sampleMap');
       const map = await createSampleMap();
       await repo.createMap(map);
+      shareManager.onMapCreated(map.id);
       return `샘플 맵을 만들었소: ${map.name}`;
     });
 
@@ -106,13 +111,7 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
       </div>
       {pending.length > 0 && (
         <div className="notice ok pending-note" role="status">
-          공유 맵 {pending.length}개를 받는 중이오. 링크를 보낸 사람이 접속해 있어야 내용이 도착하오.
-          <button className="btn small ghost" onClick={() => pending.forEach((id) => {
-              shareManager.stop(id);
-              void repo.deleteMap(id);
-            })}>
-            참여 취소
-          </button>
+          세션의 맵 {pending.length}개를 받는 중이오. 그 맵을 가진 사람이 접속해 있어야 내용이 도착하오.
         </div>
       )}
       {maps.length === 0 && <div className="emptynote">등록된 맵이 없소. "맵 추가"로 시작하거나 .mapops 파일을 가져오시오.</div>}
@@ -120,7 +119,9 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
       {pendingDelete && (
         <ConfirmDialog
           title="맵 삭제"
-          message={`"${pendingDelete.name}"을(를) 삭제하겠소? 층 ${pendingDelete.floors.length}개와 마커 ${pendingDelete.markers.length}개가 함께 지워지며 되돌릴 수 없소. 필요하면 먼저 내보내기로 백업하시오.`}
+          message={`"${pendingDelete.name}"을(를) 삭제하겠소? 층 ${pendingDelete.floors.length}개와 마커 ${pendingDelete.markers.length}개가 함께 지워지며 되돌릴 수 없소.${
+            shareManager.isIncluded(pendingDelete.id) ? ' 공유 세션에서도 빠지오(친구가 이미 받은 사본은 남소).' : ''
+          } 필요하면 먼저 내보내기로 백업하시오.`}
           confirmLabel="삭제"
           danger
           onCancel={() => setPendingDelete(null)}
@@ -128,7 +129,7 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
             const target = pendingDelete;
             setPendingDelete(null);
             void run(async () => {
-              shareManager.stop(target.id);
+              shareManager.onMapDeleted(target.id);
               await repo.deleteMap(target.id);
               return `삭제했소: ${target.name}`;
             });

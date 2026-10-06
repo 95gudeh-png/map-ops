@@ -1,13 +1,12 @@
 /**
- * 맵 하나의 실시간 공유 세션 (명세서 §4.5).
+ * 공유 세션 하나(명세서 §4.5 — 세션 단위 공유). 방 하나로 세션의 모든 맵을 함께 동기화한다.
  *
  * 연결: Trystero(Nostr 공개 릴레이로 서로를 찾은 뒤 브라우저끼리 WebRTC 직접 연결). 서버·계정 불필요.
  * 방 암호(password)로 연결 협상이 암호화되고, 데이터는 WebRTC(DTLS)로 암호화된다.
  *
- * - 'sync'  : Yjs 상태 벡터(sv) / 업데이트(up) 교환 → 맵 문서 병합(CRDT)
- * - 'aw'    : y-protocols awareness(접속자 이름·색, 선택 위치, 필요한 이미지)
- * - 'img'   : 요청/응답. 해시를 요청하면 원본 바이트로 답한다(Trystero가 큰 데이터를 나눠 보냄).
- *             받은 쪽은 해시를 다시 계산해 일치할 때만 저장한다.
+ * - 'sync' : DocMux로 여러 Y.Doc(세션 목록 'ws' + 맵들) 다중화
+ * - 'aw'   : y-protocols awareness(접속자 이름·색, 선택 위치(맵 ID 포함), 필요한 이미지)
+ * - 'img'  : 요청/응답. 해시를 요청하면 원본 바이트로 답한다. 받은 쪽은 해시를 검증한다.
  */
 import * as Y from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -16,9 +15,12 @@ import type { Vec } from '../geometry';
 import type { Id } from '../model';
 import { getImage, putReceivedImage } from '../store/imageStore';
 import { readMap } from '../store/mapDoc';
+import { DocMux, type MuxMeta } from './docMux';
 
-const APP_ID = 'map-ops/v1';
+const APP_ID = 'map-ops/v2';
 const REMOTE = Symbol('remote');
+/** 세션 목록 문서의 다중화 키. */
+export const WS_KEY = 'ws';
 
 export interface PeerUser {
   name: string;
@@ -28,28 +30,34 @@ export interface PeerUser {
 export interface RemoteProbe {
   clientId: number;
   user: PeerUser;
+  mapId: Id;
+  w: Vec;
+  floorId: Id;
+}
+
+export interface ProbeState {
+  mapId: Id;
   w: Vec;
   floorId: Id;
 }
 
 interface AwarenessState {
   user?: PeerUser;
-  probe?: { w: Vec; floorId: Id } | null;
+  probe?: ProbeState | null;
   need?: string[];
 }
 
 export type SessionStatus = 'connecting' | 'online' | 'offline';
 
 export interface SessionOptions {
-  mapId: Id;
-  doc: Y.Doc;
+  sessionId: string;
   secret: string;
+  /** 세션 목록 문서(포함된 맵 ID). */
+  wsDoc: Y.Doc;
   relays?: string[];
   user: PeerUser;
   onChange: () => void;
 }
-
-type SyncMeta = { t: 'sv' | 'up' };
 
 /** 파일 머리 바이트로 이미지 형식 추정(전송 시 MIME이 따라오지 않으므로). */
 export function sniffImageType(b: Uint8Array): string {
@@ -67,15 +75,16 @@ const toBytes = (data: unknown): Uint8Array<ArrayBuffer> | null => {
   return null;
 };
 
-export class ShareSession {
-  readonly mapId: Id;
-  private doc: Y.Doc;
+export class WorkspaceSession {
+  readonly sessionId: string;
   private room: Room;
+  private mux: DocMux;
   private awareness: awarenessProtocol.Awareness;
   private sync;
   private aw;
   private img;
-  /** peerId → 그 사람의 awareness clientID들(떠나면 상태 제거). */
+  /** 이미지 확인 대상 맵 문서들. */
+  private mapDocs = new Map<Id, Y.Doc>();
   private peerClients = new Map<string, Set<number>>();
   private receivingFrom: string | null = null;
   private need = new Set<string>();
@@ -85,31 +94,30 @@ export class ShareSession {
   private onChange: () => void;
 
   constructor(o: SessionOptions) {
-    this.mapId = o.mapId;
-    this.doc = o.doc;
+    this.sessionId = o.sessionId;
     this.onChange = o.onChange;
-    this.awareness = new awarenessProtocol.Awareness(o.doc);
+    // awareness는 세션 목록 문서에 묶는다(맵 문서와 수명이 독립)
+    this.awareness = new awarenessProtocol.Awareness(o.wsDoc);
     this.awareness.setLocalState({ user: o.user, probe: null, need: [] } satisfies AwarenessState);
 
     this.room = joinRoom(
       { appId: APP_ID, password: o.secret, ...(o.relays?.length ? { relayConfig: { urls: o.relays } } : {}) },
-      o.mapId,
+      o.sessionId,
       { onJoinError: (e) => console.warn('[share] 참여 오류', e.error) },
     );
 
     this.sync = this.room.makeAction<Uint8Array>('sync', {
       onMessage: (data, ctx) => {
         const bytes = toBytes(data);
-        const meta = ctx.metadata as SyncMeta | undefined;
-        if (!bytes || !meta) return;
-        if (meta.t === 'sv') {
-          // 상대가 가진 상태와의 차이만 돌려준다
-          void this.sync.send(Y.encodeStateAsUpdate(this.doc, bytes), { target: ctx.peerId, metadata: { t: 'up' } });
-        } else if (meta.t === 'up') {
-          Y.applyUpdate(this.doc, bytes, REMOTE);
-        }
+        const meta = ctx.metadata as MuxMeta | undefined;
+        if (bytes && meta && typeof meta.d === 'string') this.mux.receive(bytes, meta, ctx.peerId);
       },
     });
+    this.mux = new DocMux((data, meta, target) => {
+      if (this.peerCount() === 0) return;
+      void this.sync.send(data, { metadata: { ...meta }, ...(target ? { target } : {}) });
+    });
+    this.mux.attach(WS_KEY, o.wsDoc);
 
     this.aw = this.room.makeAction<Uint8Array>('aw', {
       onMessage: (data, ctx) => {
@@ -134,8 +142,7 @@ export class ShareSession {
     });
 
     this.room.onPeerJoin = (peerId) => {
-      // 서로 상태 벡터를 보내면 양쪽이 각자 모자란 부분을 받는다
-      void this.sync.send(Y.encodeStateVector(this.doc), { target: peerId, metadata: { t: 'sv' } });
+      this.mux.peerJoined(peerId);
       void this.aw.send(awarenessProtocol.encodeAwarenessUpdate(this.awareness, Array.from(this.awareness.getStates().keys())), { target: peerId });
       void this.fetchMissing();
       this.onChange();
@@ -147,19 +154,18 @@ export class ShareSession {
       this.onChange();
     };
 
-    this.doc.on('update', this.onDocUpdate);
     this.awareness.on('update', this.onAwarenessUpdate);
     this.awareness.on('change', this.onAwarenessChange);
-    // 릴레이 연결 상태는 이벤트가 없어 주기적으로 확인
     this.timer = window.setInterval(() => this.onChange(), 2000);
-    void this.refreshNeed();
   }
 
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
     window.clearInterval(this.timer);
-    this.doc.off('update', this.onDocUpdate);
+    for (const doc of this.mapDocs.values()) doc.off('update', this.onMapUpdate);
+    this.mapDocs.clear();
+    this.mux.detachAll();
     this.awareness.setLocalState(null); // 떠남을 알림
     this.awareness.off('update', this.onAwarenessUpdate);
     this.awareness.off('change', this.onAwarenessChange);
@@ -167,32 +173,26 @@ export class ShareSession {
     void this.room.leave();
   }
 
-  /* ---------- 이벤트 ---------- */
+  /* ---------- 맵 붙이기/떼기 ---------- */
 
-  private onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin !== REMOTE && this.peerCount() > 0) void this.sync.send(update, { metadata: { t: 'up' } });
+  attachMap(mapId: Id, doc: Y.Doc) {
+    if (this.mapDocs.has(mapId)) return;
+    this.mapDocs.set(mapId, doc);
+    doc.on('update', this.onMapUpdate);
+    this.mux.attach(mapId, doc);
     void this.refreshNeed();
-  };
+  }
 
-  private onAwarenessUpdate = (
-    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
-    origin: unknown,
-  ) => {
-    if (origin === REMOTE) {
-      const peer = this.receivingFrom;
-      if (peer) {
-        const set = this.peerClients.get(peer) ?? new Set<number>();
-        for (const id of [...added, ...updated]) set.add(id);
-        for (const id of removed) set.delete(id);
-        this.peerClients.set(peer, set);
-      }
-      return;
-    }
-    const changed = [...added, ...updated, ...removed];
-    if (changed.length && this.peerCount() > 0) void this.aw.send(awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
-  };
+  detachMap(mapId: Id) {
+    this.mapDocs.get(mapId)?.off('update', this.onMapUpdate);
+    this.mapDocs.delete(mapId);
+    this.mux.detach(mapId);
+    void this.refreshNeed();
+  }
 
-  private onAwarenessChange = () => this.onChange();
+  attachedMaps(): Id[] {
+    return [...this.mapDocs.keys()];
+  }
 
   /* ---------- 상태 ---------- */
 
@@ -226,7 +226,7 @@ export class ShareSession {
     return this.need.size;
   }
 
-  setProbe(probe: { w: Vec; floorId: Id } | null) {
+  setProbe(probe: ProbeState | null) {
     this.awareness.setLocalStateField('probe', probe);
   }
 
@@ -234,13 +234,38 @@ export class ShareSession {
     this.awareness.setLocalStateField('user', user);
   }
 
+  /* ---------- awareness ---------- */
+
+  private onAwarenessUpdate = (
+    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown,
+  ) => {
+    if (origin === REMOTE) {
+      const peer = this.receivingFrom;
+      if (peer) {
+        const set = this.peerClients.get(peer) ?? new Set<number>();
+        for (const id of [...added, ...updated]) set.add(id);
+        for (const id of removed) set.delete(id);
+        this.peerClients.set(peer, set);
+      }
+      return;
+    }
+    const changed = [...added, ...updated, ...removed];
+    if (changed.length && this.peerCount() > 0) void this.aw.send(awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
+  };
+
+  private onAwarenessChange = () => this.onChange();
+
   /* ---------- 이미지 ---------- */
 
-  /** 맵이 참조하는 이미지 중 로컬에 없는 것을 찾는다. */
+  private onMapUpdate = () => void this.refreshNeed();
+
+  /** 세션 맵들이 참조하는 이미지 중 로컬에 없는 것을 찾는다. */
   private async refreshNeed() {
-    const map = readMap(this.doc, this.mapId);
     const missing = new Set<string>();
-    for (const f of map?.floors ?? []) if (!(await getImage(f.imageId))) missing.add(f.imageId);
+    for (const [mapId, doc] of this.mapDocs) {
+      for (const f of readMap(doc, mapId)?.floors ?? []) if (!(await getImage(f.imageId))) missing.add(f.imageId);
+    }
     if (this.destroyed) return;
     const changed = missing.size !== this.need.size || [...missing].some((id) => !this.need.has(id));
     this.need = missing;

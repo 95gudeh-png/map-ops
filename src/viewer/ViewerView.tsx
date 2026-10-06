@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { fitView, floorWorldRect, panView, zoomViewAt, type Size, type Vec, type View } from '../geometry';
 import { markerWorld } from '../mapOps';
 import { DEFAULT_MARKER_STYLE, newId, type GameMap, type Id, type Marker, type MarkerStyle } from '../model';
-import { SharePanel } from '../share/SharePanel';
 import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -74,8 +73,8 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [crosshair, setCrosshair] = useState<CrosshairSettings>(loadCrosshair);
   const [guide, setGuide] = useState<CursorGuideSettings>(loadCursorGuide);
   const [selectedMarker, setSelectedMarker] = useState<Id | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
-  const shareState = useShareState(map.id);
+  const share = useShareState();
+  const inSession = share.active && share.included.includes(map.id);
   const remoteProbes = useRemoteProbes(map.id);
   const [tool, setTool] = useState<Tool>('view');
   const [pen, setPen] = useState<PenSettings>(loadPen);
@@ -279,7 +278,7 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   useEffect(() => paintAll(), [probe, paintAll]);
   // 내 선택 위치를 공유 상대에게 알림
-  useEffect(() => shareManager.setProbe(map.id, probe), [map.id, probe, shareState.shared]);
+  useEffect(() => shareManager.setProbe(map.id, probe), [map.id, probe, inSession]);
   useEffect(() => () => shareManager.setProbe(map.id, null), [map.id]);
 
   useEffect(() => {
@@ -441,11 +440,12 @@ export function ViewerView({ map, onEditMap }: Props) {
             {sidebarOpen ? '목록 숨기기 ▸' : '◂ 마커 목록'}
           </button>
         )}
-        <button className={`btn small ${shareState.shared ? 'sharing' : ''}`} onClick={() => setShareOpen((v) => !v)} aria-expanded={shareOpen}>
-          {shareState.shared ? `공유 중 · ${shareState.peers.length}명` : '공유'}
-        </button>
+        {share.active && (
+          <span className={`badge ${inSession ? 'ok' : ''}`} title={inSession ? '세션에 포함된 맵' : '세션에서 제외된 맵(위쪽 "공유 중"에서 넣을 수 있소)'}>
+            {inSession ? '세션 공유 중' : '세션 제외'}
+          </span>
+        )}
       </div>
-      {shareOpen && <SharePanel mapId={map.id} onClose={() => setShareOpen(false)} />}
       {settingsOpen && (
         <CursorGuidePanel guide={guide} crosshair={crosshair} onGuide={updateGuide} onCrosshair={updateCrosshair} onClose={() => setSettingsOpen(false)} />
       )}

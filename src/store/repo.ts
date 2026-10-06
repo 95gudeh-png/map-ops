@@ -8,15 +8,17 @@ import type { GameMap, Id } from '../model';
 import { readMap, writeMap } from './mapDoc';
 import { closeImageDb, deleteImages, IMAGE_DB, listImageIds } from './imageStore';
 
-export interface ShareInfo {
+/** 참여 중인 공유 세션(로컬 전용 — 인덱스 문서는 공유되지 않음). */
+export interface SessionInfo {
+  id: string;
   /** 방 암호(링크에 포함). */
   secret: string;
+  /** 이 기기에서 새로 만든 맵을 세션에 자동으로 넣을지. */
+  autoAdd: boolean;
 }
 
 interface IndexEntry {
   addedAt: number;
-  /** 공유 중이면 방 정보(로컬 전용 — 인덱스 문서는 공유되지 않음). */
-  share?: ShareInfo;
 }
 
 interface OpenDoc {
@@ -81,30 +83,21 @@ export class Repo {
     return this.index.has(id);
   }
 
-  getShare(id: Id): ShareInfo | undefined {
-    return this.index.get(id)?.share;
+  getSession(): SessionInfo | null {
+    const s = this.indexDoc.getMap<SessionInfo>('session').get('current');
+    return s ?? null;
   }
 
-  /** 공유된 맵 ID 목록(앱 시작 시 자동 재접속용). */
-  sharedIds(): Id[] {
-    return Array.from(this.index.entries())
-      .filter(([, e]) => e.share)
-      .map(([id]) => id);
+  setSession(info: SessionInfo | null) {
+    const m = this.indexDoc.getMap<SessionInfo>('session');
+    if (info) m.set('current', info);
+    else m.delete('current');
   }
 
-  setShare(id: Id, share: ShareInfo | null) {
-    const entry = this.index.get(id);
-    if (!entry) return;
-    const next: IndexEntry = { addedAt: entry.addedAt };
-    if (share) next.share = share;
-    this.index.set(id, next);
-  }
-
-  /** 공유 링크로 참여: 빈 문서를 열어 두고 상대에게서 내용을 받는다. 이미 있으면 그대로. */
-  async joinMap(id: Id, share: ShareInfo): Promise<Y.Doc> {
+  /** 세션으로 받는 맵: 빈 문서를 열어 두고 상대에게서 내용을 받는다. 이미 있으면 그 문서를 돌려준다. */
+  async joinMap(id: Id): Promise<Y.Doc> {
     const { doc } = await this.openDoc(id);
-    const entry = this.index.get(id);
-    this.index.set(id, { addedAt: entry?.addedAt ?? Date.now(), share });
+    if (!this.index.has(id)) this.index.set(id, { addedAt: Date.now() });
     return doc;
   }
 
@@ -159,8 +152,8 @@ export class Repo {
    * 이 브라우저의 MAP OPS 데이터를 모두 지운다(맵·이미지·목록).
    * 연결을 닫은 뒤 데이터베이스를 삭제하므로, 호출 후에는 페이지를 새로 불러와야 한다.
    */
-  async wipeAll(): Promise<void> {
-    const names = new Set<string>([INDEX_DB, IMAGE_DB, ...Array.from(this.docs.keys()).map(docName)]);
+  async wipeAll(extraDbNames: string[] = []): Promise<void> {
+    const names = new Set<string>([INDEX_DB, IMAGE_DB, ...Array.from(this.docs.keys()).map(docName), ...extraDbNames]);
     for (const { doc, persist } of this.docs.values()) {
       await persist.destroy();
       doc.destroy();
@@ -172,7 +165,7 @@ export class Repo {
     // 열지 못한(손상·이전 버전) 데이터베이스까지 찾아서 지운다
     if (typeof indexedDB.databases === 'function') {
       for (const info of await indexedDB.databases()) {
-        if (info.name && (info.name === INDEX_DB || info.name === IMAGE_DB || info.name.startsWith(MAP_DB_PREFIX))) names.add(info.name);
+        if (info.name && (info.name === INDEX_DB || info.name === IMAGE_DB || info.name.startsWith('mapops-'))) names.add(info.name);
       }
     }
     await Promise.all(Array.from(names).map(deleteDatabase));

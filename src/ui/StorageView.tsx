@@ -78,7 +78,8 @@ export function StorageView({ onBack }: Props) {
 
   const wipe = async () => {
     setBusy(true);
-    shareManager.closeAll();
+    const sessionDbs = shareManager.dbNames();
+    await shareManager.closeAll();
     for (const k of localKeys()) {
       try {
         localStorage.removeItem(k);
@@ -86,7 +87,7 @@ export function StorageView({ onBack }: Props) {
         /* 무시 */
       }
     }
-    await repo.wipeAll();
+    await repo.wipeAll(sessionDbs);
     location.reload();
   };
 
@@ -164,7 +165,7 @@ export function StorageView({ onBack }: Props) {
                 <tr key={m.id}>
                   <td>
                     {m.name}
-                    {repo.getShare(m.id) && <span className="badge small">공유</span>}
+                    {shareManager.isIncluded(m.id) && <span className="badge small">세션</span>}
                   </td>
                   <td>{m.floors.length}</td>
                   <td>{m.markers.length}</td>
@@ -260,7 +261,7 @@ export function StorageView({ onBack }: Props) {
             const target = pendingDelete;
             setPendingDelete(null);
             void run(async () => {
-              shareManager.stop(target.id);
+              shareManager.onMapDeleted(target.id);
               await repo.deleteMap(target.id);
               return `삭제했소: ${target.name}`;
             });

@@ -260,6 +260,15 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .mk-actions button.del:hover { color: var(--danger); }
 /* 공유 */
 .viewer { position: relative; }
+.topbar-pop-anchor { position: relative; z-index: 40; }
+.topbar-pop-anchor .popover.share-pop { position: absolute; top: 6px; right: 16px; }
+.form-head { display: flex; align-items: center; justify-content: space-between; }
+.form-head .form-title { margin: 0; }
+.include-list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.include-list li { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.include-list li:last-child { border-bottom: none; }
+.include-list li.current { background: var(--accent-dim); }
+.include-list label { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; cursor: pointer; }
 .btn.sharing { border-color: var(--ok); color: var(--ok); }
 .popover.share-pop { top: 44px; right: 0; bottom: auto; width: 340px; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
 .share-pop .field { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); }
