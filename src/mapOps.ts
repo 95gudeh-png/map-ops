@@ -91,6 +91,36 @@ export function removeFloor(map: GameMap, floorId: Id): RemoveFloorResult {
   };
 }
 
+/**
+ * 편집 마법사 저장 시 병합. 편집하는 동안 다른 사람이 바꾼 마커를 잃지 않도록 한다.
+ * - 초안에 있는 마커: 초안 값(기준층 변경 등으로 변환된 값)
+ * - 편집 시작 후 새로 생긴 마커: 현재 값 유지(층이 사라졌으면 그 층만 제외)
+ * - 편집 시작 때 있었는데 초안에 없는 마커: 편집으로 삭제된 것이므로 제외
+ * - 편집 중 다른 사람이 지운 마커: 제외
+ */
+export function mergeEditedMap(initial: GameMap, draft: GameMap, current: GameMap | undefined): GameMap {
+  if (!current) return draft;
+  const inDraft = new Map(draft.markers.map((m) => [m.id, m]));
+  const inInitial = new Set(initial.markers.map((m) => m.id));
+  const floorIds = new Set(draft.floors.map((f) => f.id));
+  const markers: Marker[] = [];
+  for (const m of current.markers) {
+    const d = inDraft.get(m.id);
+    if (d) {
+      markers.push(d);
+      continue;
+    }
+    if (inInitial.has(m.id)) continue;
+    if (m.scope.kind === 'floor') {
+      if (floorIds.has(m.scope.floorId)) markers.push(m);
+    } else {
+      const ids = m.scope.floorIds.filter((id) => floorIds.has(id));
+      if (ids.length) markers.push({ ...m, scope: { ...m.scope, floorIds: ids } });
+    }
+  }
+  return { ...draft, markers };
+}
+
 export interface NewImage {
   imageId: string;
   w: number;

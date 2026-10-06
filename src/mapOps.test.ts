@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { localToWorld, vec, worldToScreen, type View } from './geometry';
-import { changeAnchor, markerWorld, removeFloor, replaceFloorImage } from './mapOps';
+import { changeAnchor, markerWorld, mergeEditedMap, removeFloor, replaceFloorImage } from './mapOps';
 import type { Floor, GameMap, Marker } from './model';
 
 function floor(id: string, r: number, dx: number, dy: number, w = 1000, h = 800): Floor {
@@ -104,6 +104,23 @@ describe('removeFloor', () => {
     map = removeFloor(map, 'F2').map;
     map = removeFloor(map, 'F3').map;
     expect(() => removeFloor(map, 'F1')).toThrow();
+  });
+});
+
+describe('mergeEditedMap', () => {
+  it('편집 중 다른 사람이 추가한 마커는 남고, 편집으로 지운 마커와 남이 지운 마커는 빠진다', () => {
+    const initial = sampleMap();
+    // 편집: F3 삭제(m3에서 F3 빠짐, m4는 F2 단일로)
+    const draft = removeFloor(initial, 'F3').map;
+    // 그 사이 친구: m1 삭제, 새 마커 2개 추가(하나는 지워질 F3에만)
+    const extra: Marker[] = [
+      { id: 'n1', type: 'note', label: '친구', scope: { kind: 'floor', floorId: 'F2', p: vec(1, 1) }, createdAt: 9 },
+      { id: 'n2', type: 'note', label: 'F3만', scope: { kind: 'floor', floorId: 'F3', p: vec(1, 1) }, createdAt: 10 },
+    ];
+    const current = { ...initial, markers: [...initial.markers.filter((m) => m.id !== 'm1'), ...extra] };
+    const merged = mergeEditedMap(initial, draft, current);
+    expect(merged.markers.map((m) => m.id)).toEqual(['m2', 'm3', 'm4', 'n1']);
+    expect(merged.markers.find((m) => m.id === 'm4')!.scope.kind).toBe('floor');
   });
 });
 

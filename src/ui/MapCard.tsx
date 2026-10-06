@@ -5,11 +5,12 @@ import { useImageUrl } from './hooks';
 interface Props {
   map: GameMap;
   onOpen: () => void;
+  onEdit: () => void;
   onExport: () => void;
   onDelete: () => void;
 }
 
-export function MapCard({ map, onOpen, onExport, onDelete }: Props) {
+export function MapCard({ map, onOpen, onEdit, onExport, onDelete }: Props) {
   const thumb = useImageUrl(map.floors[0]?.imageId);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -43,8 +44,8 @@ export function MapCard({ map, onOpen, onExport, onDelete }: Props) {
         </button>
         {menuOpen && (
           <div className="menu" role="menu">
-            <button role="menuitem" disabled title="M7에서 만들어지오">
-              편집 (준비 중)
+            <button role="menuitem" onClick={pick(onEdit)}>
+              편집 (층·정렬)
             </button>
             <button role="menuitem" onClick={pick(onExport)}>
               내보내기 (.mapops)

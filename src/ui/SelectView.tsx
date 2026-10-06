@@ -9,11 +9,12 @@ import { MapCard } from './MapCard';
 interface Props {
   onOpenMap: (id: string) => void;
   onAddMap: () => void;
+  onEditMap: (map: GameMap) => void;
 }
 
 type Notice = { kind: 'ok' | 'error'; text: string } | null;
 
-export function SelectView({ onOpenMap, onAddMap }: Props) {
+export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
   const maps = useMaps();
   const [pendingDelete, setPendingDelete] = useState<GameMap | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -91,6 +92,7 @@ export function SelectView({ onOpenMap, onAddMap }: Props) {
             key={m.id}
             map={m}
             onOpen={() => onOpenMap(m.id)}
+            onEdit={() => onEditMap(m)}
             onExport={() => run(async () => exportMapToFile(m))}
             onDelete={() => setPendingDelete(m)}
           />

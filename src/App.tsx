@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { mergeEditedMap } from './mapOps';
 import type { GameMap } from './model';
 import { repo } from './store/repo';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { useMaps } from './ui/hooks';
 import { SelectView } from './ui/SelectView';
+import { ViewerView } from './viewer/ViewerView';
 import { emptyDraft } from './wizard/draft';
 import { WizardView } from './wizard/WizardView';
 
@@ -40,13 +43,15 @@ export function App() {
   const onDirtyChange = useCallback((d: boolean) => (wizardDirty.current = d), []);
 
   const saveWizard = async (map: GameMap) => {
-    if (route.view === 'wizard' && route.mode === 'edit') repo.saveMap(map);
+    if (route.view === 'wizard' && route.mode === 'edit') repo.saveMap(mergeEditedMap(route.initial, map, repo.getMap(map.id)));
     else await repo.createMap(map);
     wizardDirty.current = false;
     setRoute({ view: 'viewer', mapId: map.id });
   };
 
-  const viewerMap = route.view === 'viewer' ? repo.getMap(route.mapId) : undefined;
+  const maps = useMaps(); // 공유 상대의 변경도 즉시 반영되도록 구독
+  const viewerMap = route.view === 'viewer' ? maps.find((m) => m.id === route.mapId) : undefined;
+  const editMap = (map: GameMap) => setRoute({ view: 'wizard', mode: 'edit', initial: map });
 
   return (
     <>
@@ -78,13 +83,15 @@ export function App() {
           <SelectView
             onOpenMap={(mapId) => setRoute({ view: 'viewer', mapId })}
             onAddMap={() => setRoute({ view: 'wizard', mode: 'create', initial: emptyDraft() })}
+            onEditMap={editMap}
           />
         )}
-        {ready && route.view === 'viewer' && (
-          <p className="dim">
-            {viewerMap ? `"${viewerMap.name}" 사용 화면은 M5에서 만들어지오.` : '맵을 찾을 수 없소.'}
-          </p>
-        )}
+        {ready && route.view === 'viewer' &&
+          (viewerMap ? (
+            <ViewerView key={viewerMap.id} map={viewerMap} onEditMap={() => editMap(viewerMap)} />
+          ) : (
+            <p className="dim">맵을 찾을 수 없소. 삭제되었을 수 있소.</p>
+          ))}
         {ready && route.view === 'wizard' && (
           <WizardView
             key={route.initial.id}
