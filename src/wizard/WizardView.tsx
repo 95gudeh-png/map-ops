@@ -56,12 +56,31 @@ export function WizardView({ initial, mode, startStep = 1, onSave, onDirtyChange
   return (
     <div className="wizard-box">
       <ol className="wizard-steps" aria-label="진행 단계">
-        {['이름', '층 업로드', '정렬'].map((label, i) => (
-          <li key={label} className={step === i + 1 ? 'on' : step > i + 1 ? 'done' : ''}>
-            {i + 1}. {label}
-          </li>
-        ))}
+        {(['이름', mode === 'edit' ? '층 관리' : '층 업로드', '정렬'] as const).map((label, i) => {
+          const n = (i + 1) as 1 | 2 | 3;
+          // 편집 모드에서는 단계를 바로 오갈 수 있다(정렬은 층이 2개 이상일 때만)
+          const canJump = mode === 'edit' && n !== step && draft.name.trim() !== '' && (n !== 3 || !single);
+          return (
+            <li key={label} className={step === n ? 'on' : step > n ? 'done' : ''}>
+              {canJump ? (
+                <button className="step-link" onClick={() => setStep(n)}>
+                  {n}. {label}
+                </button>
+              ) : (
+                `${n}. ${label}`
+              )}
+            </li>
+          );
+        })}
       </ol>
+      {mode === 'edit' && step !== 3 && (
+        <div className="edit-save-row">
+          <span className="dim">위의 단계를 눌러 바로 이동할 수 있소.</span>
+          <button className="btn small primary" onClick={() => void save()} disabled={!draft.name.trim() || draft.floors.length === 0 || saving}>
+            변경 저장
+          </button>
+        </div>
+      )}
 
       {step === 1 && (
         <div className="wizard-step">

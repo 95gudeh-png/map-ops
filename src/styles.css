@@ -87,6 +87,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .wizard-steps li { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); }
 .wizard-steps li.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 .wizard-steps li.done { color: var(--text); }
+.step-link { background: none; border: none; color: inherit; font: inherit; padding: 0; text-decoration: underline dotted; }
+.edit-save-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -6px 0 16px; padding: 8px 10px; background: var(--panel2); border-radius: 8px; }
 .wizard-step h3 { margin: 0 0 4px; font-size: 16px; }
 .step-note { color: var(--text-dim); font-size: 13px; margin: 0 0 14px; line-height: 1.55; }
 .wizard-actions { display: flex; justify-content: space-between; margin-top: 22px; }

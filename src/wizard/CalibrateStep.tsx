@@ -157,11 +157,13 @@ export function CalibrateStep({ draft, onChange, onBack, onFinish, finishLabel }
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       stageSize.current = { w: el.clientWidth, h: el.clientHeight };
       if (!view.current) fitToAnchor();
       else paint();
-    });
+    };
+    measure(); // 첫 측정은 즉시
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [fitToAnchor, paint]);
@@ -169,11 +171,13 @@ export function CalibrateStep({ draft, onChange, onBack, onFinish, finishLabel }
   useLayoutEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const tile = el.querySelector<HTMLElement>('.grid-tile');
       if (tile) tileSize.current = { w: tile.clientWidth, h: tile.clientHeight };
       paint();
-    });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [showGrid, paint]);

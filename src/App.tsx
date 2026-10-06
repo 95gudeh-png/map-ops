@@ -34,7 +34,8 @@ export function App() {
   const leaveWizard = useCallback(() => {
     setConfirmExit(false);
     wizardDirty.current = false;
-    setRoute({ view: 'select' });
+    // 편집 취소는 그 맵의 사용 화면으로, 새 맵 취소는 목록으로
+    setRoute((r) => (r.view === 'wizard' && r.mode === 'edit' ? { view: 'viewer', mapId: r.initial.id } : { view: 'select' }));
     // 저장하지 않은 마법사에서 올린 이미지 정리
     void repo.collectGarbageImages();
   }, []);

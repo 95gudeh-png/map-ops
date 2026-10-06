@@ -98,10 +98,13 @@ export const Panel = memo(function Panel(p: Props) {
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const report = () => {
       latest.current.onResize({ w: el.clientWidth, h: el.clientHeight });
       paint();
-    });
+    };
+    // 첫 측정은 즉시(ResizeObserver는 다음 렌더 프레임까지 늦을 수 있음)
+    report();
+    const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
   }, [paint]);
