@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mergeEditedMap } from './mapOps';
 import type { GameMap } from './model';
+import { parseJoinHash, shareManager, useShareState } from './share/shareManager';
 import { repo } from './store/repo';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { useMaps } from './ui/hooks';
@@ -21,13 +22,37 @@ export function App() {
   const [route, setRoute] = useState<Route>({ view: 'select' });
   const [confirmExit, setConfirmExit] = useState(false);
   const wizardDirty = useRef(false);
+  const [joinRequest, setJoinRequest] = useState<{ mapId: string; secret: string } | null>(null);
 
   useEffect(() => {
     repo.init().then(
-      () => setReady(true),
+      () => {
+        shareManager.resumeAll();
+        setReady(true);
+      },
       (e) => setError(e instanceof Error ? e.message : String(e)),
     );
   }, []);
+
+  // 공유 링크(#join=...)로 열렸으면 참여 여부를 묻는다
+  useEffect(() => {
+    const check = () => {
+      const req = parseJoinHash(location.hash);
+      if (req) setJoinRequest(req);
+      if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
+    };
+    check();
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
+  }, []);
+
+  const acceptJoin = async () => {
+    if (!joinRequest) return;
+    const { mapId, secret } = joinRequest;
+    setJoinRequest(null);
+    await shareManager.join(mapId, secret);
+    setRoute(repo.getMap(mapId) ? { view: 'viewer', mapId } : { view: 'select' });
+  };
 
   const toSelect = () => setRoute({ view: 'select' });
 
@@ -53,6 +78,15 @@ export function App() {
   const maps = useMaps(); // 공유 상대의 변경도 즉시 반영되도록 구독
   const viewerMap = route.view === 'viewer' ? maps.find((m) => m.id === route.mapId) : undefined;
   const editMap = (map: GameMap) => setRoute({ view: 'wizard', mode: 'edit', initial: map });
+  const shareState = useShareState(viewerMap?.id);
+  const syncText =
+    shareState.status === 'local'
+      ? '로컬'
+      : shareState.status === 'online'
+        ? `공유 중 · ${shareState.peers.length}명 접속`
+        : shareState.status === 'connecting'
+          ? '연결 중…'
+          : '연결 끊김(로컬 변경은 보존됨)';
 
   return (
     <>
@@ -71,9 +105,9 @@ export function App() {
               ✕ 마법사 나가기
             </button>
           )}
-          <div className="sync-state" title="공유 기능은 M6에서 만들어지오">
+          <div className={`sync-state ${shareState.status}`} role="status">
             <span className="dot" />
-            로컬
+            {syncText}
           </div>
         </div>
       </header>
@@ -104,6 +138,15 @@ export function App() {
           />
         )}
       </main>
+      {ready && joinRequest && (
+        <ConfirmDialog
+          title="공유 맵에 참여"
+          message={`공유 링크로 열렸소. 참여하면 링크를 보낸 사람의 브라우저와 직접(P2P) 연결되어 맵을 함께 보고 고치게 되오. 내 이름은 "${shareManager.getUser().name}"(으)로 보이오. 참여하겠소?`}
+          confirmLabel="참여"
+          onCancel={() => setJoinRequest(null)}
+          onConfirm={() => void acceptJoin()}
+        />
+      )}
       {confirmExit && (
         <ConfirmDialog
           title="마법사 나가기"

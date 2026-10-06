@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { imageUrl } from '../store/imageStore';
+import { imageUrl, onImageAdded } from '../store/imageStore';
 import { repo } from '../store/repo';
 
 export function useMaps() {
@@ -12,9 +12,14 @@ export function useImageUrl(id: string | undefined): string | null {
   useEffect(() => {
     let alive = true;
     setUrl(null);
-    if (id) imageUrl(id).then((u) => alive && setUrl(u));
+    if (!id) return;
+    const load = () => imageUrl(id).then((u) => alive && setUrl(u));
+    void load();
+    // 아직 없는 이미지는 공유 상대에게서 도착하면 다시 불러온다
+    const off = onImageAdded((added) => added === id && void load());
     return () => {
       alive = false;
+      off();
     };
   }, [id]);
   return url;

@@ -8,8 +8,15 @@ import type { GameMap, Id } from '../model';
 import { readMap, writeMap } from './mapDoc';
 import { deleteImages, listImageIds } from './imageStore';
 
+export interface ShareInfo {
+  /** 방 암호(링크에 포함). */
+  secret: string;
+}
+
 interface IndexEntry {
   addedAt: number;
+  /** 공유 중이면 방 정보(로컬 전용 — 인덱스 문서는 공유되지 않음). */
+  share?: ShareInfo;
 }
 
 interface OpenDoc {
@@ -25,6 +32,8 @@ export class Repo {
   private docs = new Map<Id, OpenDoc>();
   private cache = new Map<Id, GameMap>();
   private snapshot: GameMap[] = [];
+  /** 인덱스에는 있지만 아직 내용이 없는 맵(공유 참여 후 동기화 대기). */
+  private pending: Id[] = [];
   private listeners = new Set<() => void>();
   private initPromise: Promise<void> | null = null;
 
@@ -50,6 +59,39 @@ export class Repo {
 
   getMap(id: Id): GameMap | undefined {
     return this.cache.get(id);
+  }
+
+  getPendingIds = () => this.pending;
+
+  hasMap(id: Id): boolean {
+    return this.index.has(id);
+  }
+
+  getShare(id: Id): ShareInfo | undefined {
+    return this.index.get(id)?.share;
+  }
+
+  /** 공유된 맵 ID 목록(앱 시작 시 자동 재접속용). */
+  sharedIds(): Id[] {
+    return Array.from(this.index.entries())
+      .filter(([, e]) => e.share)
+      .map(([id]) => id);
+  }
+
+  setShare(id: Id, share: ShareInfo | null) {
+    const entry = this.index.get(id);
+    if (!entry) return;
+    const next: IndexEntry = { addedAt: entry.addedAt };
+    if (share) next.share = share;
+    this.index.set(id, next);
+  }
+
+  /** 공유 링크로 참여: 빈 문서를 열어 두고 상대에게서 내용을 받는다. 이미 있으면 그대로. */
+  async joinMap(id: Id, share: ShareInfo): Promise<Y.Doc> {
+    const { doc } = await this.openDoc(id);
+    const entry = this.index.get(id);
+    this.index.set(id, { addedAt: entry?.addedAt ?? Date.now(), share });
+    return doc;
   }
 
   /** 맵 문서(Y.Doc). 실시간 공유(M6)에서 공급자를 붙이는 지점. */
@@ -113,10 +155,10 @@ export class Repo {
   }
 
   private rebuild() {
-    this.snapshot = Array.from(this.index.entries())
-      .sort((a, b) => a[1].addedAt - b[1].addedAt)
-      .map(([id]) => this.cache.get(id))
-      .filter((m): m is GameMap => !!m);
+    const entries = Array.from(this.index.entries()).sort((a, b) => a[1].addedAt - b[1].addedAt);
+    this.snapshot = entries.map(([id]) => this.cache.get(id)).filter((m): m is GameMap => !!m);
+    const pending = entries.filter(([id]) => !this.cache.has(id)).map(([id]) => id);
+    if (pending.join() !== this.pending.join()) this.pending = pending;
     for (const fn of this.listeners) fn();
   }
 }

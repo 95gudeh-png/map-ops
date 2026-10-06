@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { fitView, floorWorldRect, panView, zoomViewAt, type Size, type Vec, type View } from '../geometry';
 import { markerWorld } from '../mapOps';
 import type { GameMap, Id, Marker } from '../model';
+import { SharePanel } from '../share/SharePanel';
+import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { loadCrosshair, saveCrosshair, type CrosshairSettings } from './crosshair';
@@ -37,6 +39,9 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [crosshair, setCrosshair] = useState<CrosshairSettings>(loadCrosshair);
   const [selectedMarker, setSelectedMarker] = useState<Id | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareState = useShareState(map.id);
+  const remoteProbes = useRemoteProbes(map.id);
 
   // 층이 삭제·변경돼도 유효한 층을 가리키도록
   const valid = (id: Id) => (map.floors.some((f) => f.id === id) ? id : firstId);
@@ -129,6 +134,9 @@ export function ViewerView({ map, onEditMap }: Props) {
   }, []);
 
   useEffect(() => paintAll(), [probe, paintAll]);
+  // 내 선택 위치를 공유 상대에게 알림
+  useEffect(() => shareManager.setProbe(map.id, probe), [map.id, probe, shareState.shared]);
+  useEffect(() => () => shareManager.setProbe(map.id, null), [map.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -182,6 +190,7 @@ export function ViewerView({ map, onEditMap }: Props) {
     onProbe,
     onHoverMarker,
     onMarkerClick,
+    remoteProbes,
   };
 
   const floorSelect = (value: Id, onChange: (id: Id) => void, label: string) => (
@@ -233,7 +242,11 @@ export function ViewerView({ map, onEditMap }: Props) {
         <button className="btn small ghost" onClick={onEditMap}>
           맵 편집
         </button>
+        <button className={`btn small ${shareState.shared ? 'sharing' : ''}`} onClick={() => setShareOpen((v) => !v)} aria-expanded={shareOpen}>
+          {shareState.shared ? `공유 중 · ${shareState.peers.length}명` : '공유'}
+        </button>
       </div>
+      {shareOpen && <SharePanel mapId={map.id} onClose={() => setShareOpen(false)} />}
 
       {moving && (
         <div className="notice ok">

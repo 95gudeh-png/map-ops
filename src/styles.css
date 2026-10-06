@@ -196,6 +196,32 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .mk-actions button { background: none; border: none; color: var(--text-dim); font-size: 12px; padding: 4px 5px; border-radius: 4px; }
 .mk-actions button:hover { color: var(--text); background: var(--panel2); }
 .mk-actions button.del:hover { color: var(--danger); }
+/* 공유 */
+.viewer { position: relative; }
+.btn.sharing { border-color: var(--ok); color: var(--ok); }
+.popover.share-pop { top: 44px; right: 0; bottom: auto; width: 340px; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
+.share-pop .field { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); }
+.share-pop .name-row { display: flex; gap: 6px; align-items: center; }
+.share-pop .name-row input[type='color'] { width: 34px; height: 34px; padding: 0; border: none; background: none; }
+.share-pop .hint { margin: 0; }
+.share-status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.share-status .dot, .peer-list .dot, .sync-state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); display: inline-block; }
+.share-status.online .dot, .sync-state.online .dot { background: var(--ok); }
+.share-status.connecting .dot, .sync-state.connecting .dot { background: var(--warn); }
+.share-status.offline .dot, .sync-state.offline .dot { background: var(--danger); }
+.peer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.peer-list li { display: flex; align-items: center; gap: 5px; }
+.link-row { display: flex; gap: 6px; }
+.link-row .text-input { font-size: 11px; padding: 6px 8px; }
+.advanced { display: flex; flex-direction: column; gap: 6px; }
+.advanced textarea { font-size: 12px; resize: vertical; }
+.remote-cross { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 1; }
+.remote-cross .h, .remote-cross .v { position: absolute; background: var(--rc); opacity: 0.9; }
+.remote-cross .h { width: 18px; height: 2px; left: -9px; top: -1px; }
+.remote-cross .v { width: 2px; height: 18px; left: -1px; top: -9px; }
+.remote-cross .who { position: absolute; left: 10px; top: 6px; font-size: 10px; color: #0c0e12; background: var(--rc); padding: 0 5px; border-radius: 3px; white-space: nowrap; }
+.pending-note { margin-top: 12px; }
+
 @media (max-width: 860px) {
   .viewer-body { flex-direction: column; }
   .sidebar { width: 100%; max-height: none; }

@@ -47,6 +47,7 @@ export async function putImage(blob: Blob): Promise<StoredImage> {
   const tx = (await db()).transaction(STORE, 'readwrite');
   tx.objectStore(STORE).put(rec);
   await txDone(tx);
+  for (const fn of addedListeners) fn(id);
   return rec;
 }
 
@@ -69,12 +70,32 @@ export async function deleteImages(ids: string[]): Promise<void> {
 
 const urlCache = new Map<string, Promise<string | null>>();
 
-/** 화면 표시용 object URL(캐시됨). 이미지가 없으면 null. */
+/** 화면 표시용 object URL(캐시됨). 이미지가 없으면 null(없음은 캐시하지 않음 — 공유로 나중에 도착할 수 있다). */
 export function imageUrl(id: string): Promise<string | null> {
   let p = urlCache.get(id);
   if (!p) {
-    p = getImage(id).then((rec) => (rec ? URL.createObjectURL(rec.blob) : null));
+    p = getImage(id).then((rec) => {
+      if (rec) return URL.createObjectURL(rec.blob);
+      urlCache.delete(id);
+      return null;
+    });
     urlCache.set(id, p);
   }
   return p;
+}
+
+const addedListeners = new Set<(id: string) => void>();
+
+/** 이미지가 새로 저장되면 알림(공유로 받은 이미지를 화면에 반영). */
+export function onImageAdded(fn: (id: string) => void): () => void {
+  addedListeners.add(fn);
+  return () => addedListeners.delete(fn);
+}
+
+/** 공유로 받은 원본 바이트를 저장. 해시가 맞지 않으면 거부한다. */
+export async function putReceivedImage(expectedId: string, bytes: Uint8Array<ArrayBuffer>, type: string): Promise<boolean> {
+  const id = await hashBytes(bytes.buffer);
+  if (id !== expectedId) return false;
+  await putImage(new Blob([bytes], { type }));
+  return true;
 }

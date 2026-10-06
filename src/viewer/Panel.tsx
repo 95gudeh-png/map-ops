@@ -7,6 +7,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, type MutableRefO
 import { composeToScreen, screenToWorld, vec, worldToScreen, type Size, type Vec, type View } from '../geometry';
 import { markerOnFloor, markerWorld } from '../mapOps';
 import { MARKER_TYPES, type Floor, type GameMap, type Id, type Marker } from '../model';
+import type { RemoteProbe } from '../share/session';
 import { FloorImg, simToCss } from '../ui/FloorImg';
 
 export type Painter = () => void;
@@ -31,6 +32,8 @@ interface Props {
   onProbe: (w: Vec, floorId: Id) => void;
   onHoverMarker: (w: Vec | null) => void;
   onMarkerClick: (m: Marker, floorId: Id) => void;
+  /** 공유 상대의 선택 위치. */
+  remoteProbes: RemoteProbe[];
 }
 
 const CLICK_THRESHOLD = 4;
@@ -41,6 +44,7 @@ export const Panel = memo(function Panel(p: Props) {
   const ghostEl = useRef<HTMLImageElement | null>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const markerEls = useRef(new Map<Id, HTMLElement>());
+  const remoteEls = useRef(new Map<number, HTMLElement>());
 
   const markers = p.map.markers.filter((m) => markerOnFloor(m, p.floor.id));
   const positions = useRef(new Map<Id, Vec>());
@@ -65,6 +69,12 @@ export const Panel = memo(function Panel(p: Props) {
       const w = positions.current.get(id);
       if (!w) continue;
       const s = worldToScreen(v, w);
+      el.style.transform = `translate(${s.x}px, ${s.y}px)`;
+    }
+    for (const rp of latest.current.remoteProbes) {
+      const el = remoteEls.current.get(rp.clientId);
+      if (!el) continue;
+      const s = worldToScreen(v, rp.w);
       el.style.transform = `translate(${s.x}px, ${s.y}px)`;
     }
     const c = shared.cross.current;
@@ -190,6 +200,22 @@ export const Panel = memo(function Panel(p: Props) {
           </button>
         ))}
       </div>
+      {p.remoteProbes.map((rp) => (
+        <div
+          key={rp.clientId}
+          ref={(el) => {
+            if (el) remoteEls.current.set(rp.clientId, el);
+            else remoteEls.current.delete(rp.clientId);
+          }}
+          className="remote-cross"
+          style={{ ['--rc' as string]: rp.user.color }}
+          aria-hidden
+        >
+          <span className="h" />
+          <span className="v" />
+          <span className="who">{rp.user.name}</span>
+        </div>
+      ))}
       <div ref={crossEl} className="crosshair" aria-hidden>
         <span className="h" />
         <span className="v" />

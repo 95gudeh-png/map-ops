@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
+import { shareManager } from '../share/shareManager';
 import type { GameMap } from '../model';
 import { exportMapToFile, importMapopsFile } from '../store/exportImport';
 import { repo } from '../store/repo';
@@ -16,6 +17,7 @@ type Notice = { kind: 'ok' | 'error'; text: string } | null;
 
 export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
   const maps = useMaps();
+  const pending = useSyncExternalStore(repo.subscribe, repo.getPendingIds);
   const [pendingDelete, setPendingDelete] = useState<GameMap | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [busy, setBusy] = useState(false);
@@ -102,6 +104,17 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
           <div>맵 추가</div>
         </button>
       </div>
+      {pending.length > 0 && (
+        <div className="notice ok pending-note" role="status">
+          공유 맵 {pending.length}개를 받는 중이오. 링크를 보낸 사람이 접속해 있어야 내용이 도착하오.
+          <button className="btn small ghost" onClick={() => pending.forEach((id) => {
+              shareManager.stop(id);
+              void repo.deleteMap(id);
+            })}>
+            참여 취소
+          </button>
+        </div>
+      )}
       {maps.length === 0 && <div className="emptynote">등록된 맵이 없소. "맵 추가"로 시작하거나 .mapops 파일을 가져오시오.</div>}
 
       {pendingDelete && (
@@ -115,6 +128,7 @@ export function SelectView({ onOpenMap, onAddMap, onEditMap }: Props) {
             const target = pendingDelete;
             setPendingDelete(null);
             void run(async () => {
+              shareManager.stop(target.id);
               await repo.deleteMap(target.id);
               return `삭제했소: ${target.name}`;
             });
