@@ -4,6 +4,7 @@ import type { GameMap } from './model';
 import { parseJoinHash, shareManager, useShareState } from './share/shareManager';
 import { repo } from './store/repo';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { useMaps } from './ui/hooks';
 import { SelectView } from './ui/SelectView';
 import { StorageView } from './ui/StorageView';
@@ -119,6 +120,8 @@ export function App() {
         </div>
       </header>
       <main className={`app ${route.view === 'wizard' ? 'wide' : ''} ${route.view === 'viewer' ? 'full' : ''}`}>
+        {/* 화면을 옮기면(key 변경) 오류 상태도 초기화된다 */}
+        <ErrorBoundary key={route.view === 'viewer' ? `viewer:${route.mapId}` : route.view}>
         {ready && route.view === 'storage' && <StorageView onBack={toSelect} />}
         {error && <div className="notice error">저장소를 열지 못했소: {error}</div>}
         {!ready && !error && <p className="dim">불러오는 중…</p>}
@@ -145,6 +148,7 @@ export function App() {
             onCancel={requestLeaveWizard}
           />
         )}
+        </ErrorBoundary>
       </main>
       {ready && joinRequest && (
         <ConfirmDialog

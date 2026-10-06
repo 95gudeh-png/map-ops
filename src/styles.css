@@ -326,6 +326,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   .panels.split { flex-direction: column; }
 }
 
+.error-screen { margin: 24px auto; max-width: 640px; }
+
 /* 대화상자 */
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
 .dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: 420px; max-width: 100%; padding: 22px; }

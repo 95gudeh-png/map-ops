@@ -49,8 +49,21 @@ export function newSecret(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function shareLink(mapId: Id, secret: string): string {
-  return `${location.origin}${location.pathname}#join=${mapId}.${secret}`;
+/** 친구가 열 수 있는 공개 주소(GitHub Pages). */
+export const PUBLIC_APP_URL = 'https://95gudeh-png.github.io/map-ops/';
+
+/** 이 컴퓨터에서만 열리는 주소(실행 파일로 켠 개발 서버 등)인지. */
+export function isLocalHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname.endsWith('.localhost');
+}
+
+/**
+ * 공유 링크. 지금 주소가 이 컴퓨터 전용(localhost)이면 친구가 열 수 없으므로 공개 사이트 주소로 만든다.
+ * 맵 데이터는 주소와 무관하게 브라우저끼리 직접(같은 방 ID·비밀값) 주고받으므로 그대로 연결된다.
+ */
+export function shareLink(mapId: Id, secret: string, loc: { origin: string; pathname: string; hostname: string } = location): string {
+  const base = isLocalHost(loc.hostname) ? PUBLIC_APP_URL : `${loc.origin}${loc.pathname}`;
+  return `${base}#join=${mapId}.${secret}`;
 }
 
 /** "#join=<mapId>.<secret>" 해석. 형식이 틀리면 null. */

@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { sniffImageType } from './session';
-import { newSecret, parseJoinHash } from './shareManager';
+import { newSecret, parseJoinHash, PUBLIC_APP_URL, shareLink } from './shareManager';
+
+describe('공유 링크 주소', () => {
+  const S = 'a'.repeat(24);
+  it('localhost에서 만들면 공개 사이트 주소로', () => {
+    for (const hostname of ['localhost', '127.0.0.1', 'b.localhost']) {
+      const link = shareLink('m', S, { origin: `http://${hostname}:5173`, pathname: '/', hostname });
+      expect(link).toBe(`${PUBLIC_APP_URL}#join=m.${S}`);
+    }
+  });
+  it('공개 사이트에서는 그 주소 그대로', () => {
+    const link = shareLink('m', S, { origin: 'https://95gudeh-png.github.io', pathname: '/map-ops/', hostname: '95gudeh-png.github.io' });
+    expect(link).toBe(`https://95gudeh-png.github.io/map-ops/#join=m.${S}`);
+  });
+});
 
 describe('받은 이미지 형식 판별', () => {
   it.each([

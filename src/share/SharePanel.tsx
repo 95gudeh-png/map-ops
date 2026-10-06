@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Id } from '../model';
-import { getRelays, shareManager, useShareState } from './shareManager';
+import { getRelays, isLocalHost, shareManager, useShareState } from './shareManager';
 
 interface Props {
   mapId: Id;
@@ -88,6 +88,12 @@ export function SharePanel({ mapId, onClose }: Props) {
                 {copied ? '복사됨' : '복사'}
               </button>
             </div>
+          )}
+          {isLocalHost(location.hostname) && (
+            <p className="hint">
+              지금은 이 컴퓨터 전용 주소(localhost)에서 쓰는 중이라, 링크는 친구가 열 수 있는 공개 사이트 주소로 만들었소. 친구가 링크를 열면
+              이 화면과 그대로 연결되오(이 창을 켜 두시오).
+            </p>
           )}
           <p className="hint">링크를 가진 사람은 누구나 이 맵을 보고 고칠 수 있으니 믿는 사람에게만 보내시오.</p>
           <button className="btn small ghost danger-text" onClick={() => shareManager.stop(mapId)}>
