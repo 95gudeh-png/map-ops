@@ -14,14 +14,22 @@ import { markerOnFloor, markerWorld } from '../mapOps';
 import { MARKER_TYPES, markerColor, type Floor, type GameMap, type Id, type Marker, type Stroke } from '../model';
 import type { RemoteProbe } from '../share/session';
 import { FloorImg, simToCss } from '../ui/FloorImg';
+import type { CursorGuideSettings } from './crosshair';
 import { hitStroke, simplify, strokePath } from './drawOps';
+import { Reticle } from './Reticle';
 
-export type Painter = () => void;
+/** 패널이 등록하는 그리기 함수. paintCursor는 마우스 이동마다 불리므로 커서 가이드만 갱신한다. */
+export interface Painter {
+  paint: () => void;
+  paintCursor: () => void;
+}
 
 export interface PanelShared {
   view: MutableRefObject<View | null>;
   /** 표시할 십자선 위치(hover 우선, 없으면 probe). */
   cross: MutableRefObject<Vec | null>;
+  /** 마우스 커서의 월드 좌표(어느 패널에 있든 모든 패널에 같은 지점으로 표시). */
+  cursor: MutableRefObject<Vec | null>;
 }
 
 export type Tool = 'view' | 'pen' | 'eraser';
@@ -52,6 +60,9 @@ interface Props {
   /** 획 완성: 층 로컬 좌표와 층 로컬 굵기. */
   onStrokeDone: (floorId: Id, points: Vec[], width: number, color: string) => void;
   onEraseStroke: (id: Id) => void;
+  /** 마우스가 이 패널 위에서 움직임(월드 좌표) / 벗어남(null). */
+  onCursor: (w: Vec | null) => void;
+  guide: CursorGuideSettings;
   /** 공유 상대의 선택 위치. */
   remoteProbes: RemoteProbe[];
 }
@@ -75,6 +86,9 @@ export const Panel = memo(function Panel(p: Props) {
   const livePath = useRef<SVGPathElement>(null);
   const markerEls = useRef(new Map<Id, HTMLElement>());
   const remoteEls = useRef(new Map<number, HTMLElement>());
+  const guideH = useRef<HTMLDivElement>(null);
+  const guideV = useRef<HTMLDivElement>(null);
+  const reticleEl = useRef<HTMLDivElement>(null);
 
   const markers = p.map.markers.filter((m) => markerOnFloor(m, p.floor.id));
   const strokes: Stroke[] = (p.map.strokes ?? []).filter((s) => s.floorId === p.floor.id);
@@ -90,10 +104,35 @@ export const Panel = memo(function Panel(p: Props) {
   const latest = useRef({ ...p, strokes });
   latest.current = { ...p, strokes };
 
+  const paintCursor = useCallback(() => {
+    const { shared, guide } = latest.current;
+    const v = shared.view.current;
+    const w = shared.cursor.current;
+    const els = [guideH.current, guideV.current, reticleEl.current];
+    if (!v || !w || !guide.enabled) {
+      for (const el of els) if (el) el.style.display = 'none';
+      return;
+    }
+    const s = worldToScreen(v, w);
+    if (guideH.current) {
+      guideH.current.style.display = guide.lines ? 'block' : 'none';
+      guideH.current.style.transform = `translateY(${s.y}px)`;
+    }
+    if (guideV.current) {
+      guideV.current.style.display = guide.lines ? 'block' : 'none';
+      guideV.current.style.transform = `translateX(${s.x}px)`;
+    }
+    if (reticleEl.current) {
+      reticleEl.current.style.display = 'block';
+      reticleEl.current.style.transform = `translate(${s.x}px, ${s.y}px)`;
+    }
+  }, []);
+
   const paint = useCallback(() => {
     const { shared, floor, ghost } = latest.current;
     const v = shared.view.current;
     if (!v) return;
+    paintCursor();
     const floorScreen = simToCss(composeToScreen(v, floor.sim));
     if (imgEl.current) imgEl.current.style.transform = floorScreen;
     if (drawGroup.current) drawGroup.current.setAttribute('transform', floorScreen);
@@ -118,7 +157,7 @@ export const Panel = memo(function Panel(p: Props) {
         crossEl.current.style.transform = `translate(${s.x}px, ${s.y}px)`;
       } else crossEl.current.style.display = 'none';
     }
-  }, []);
+  }, [paintCursor]);
 
   const registerImg = useCallback(
     (el: HTMLImageElement | null) => {
@@ -135,7 +174,7 @@ export const Panel = memo(function Panel(p: Props) {
     [paint],
   );
 
-  useEffect(() => p.registerPainter(paint), [p.registerPainter, paint]);
+  useEffect(() => p.registerPainter({ paint, paintCursor }), [p.registerPainter, paint, paintCursor]);
   useLayoutEffect(() => paint());
 
   useLayoutEffect(() => {
@@ -223,9 +262,12 @@ export const Panel = memo(function Panel(p: Props) {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const pt = local(e);
+    const v = latest.current.shared.view.current;
+    // 커서 가이드: 드래그 중이든 아니든 커서의 월드 좌표를 알린다(모든 패널이 같은 지점에 표시)
+    if (v && e.pointerType !== 'touch') latest.current.onCursor(screenToWorld(v, pt));
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
-    const pt = local(e);
     switch (d.kind) {
       case 'pan':
         p.onPan(vec(pt.x - d.last.x, pt.y - d.last.y));
@@ -271,13 +313,17 @@ export const Panel = memo(function Panel(p: Props) {
 
   const drawing = p.tool !== 'view';
   const colorOf = (m: Marker) => markerColor(p.map.markerStyle, m.type);
+  const g = p.guide;
+  // 중앙 표시가 있으면 기본 화살표를 숨긴다(그리기 중에는 펜·지우개 커서 유지)
+  const hideCursor = g.enabled && g.hideCursor && g.reticle !== 'none' && !drawing;
 
   return (
     <div
       ref={stageRef}
-      className={`view-stage ${drawing ? `drawing tool-${p.tool}` : ''}`}
+      className={`view-stage ${drawing ? `drawing tool-${p.tool}` : ''} ${hideCursor ? 'hide-cursor' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerLeave={() => p.onCursor(null)}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
         drag.current = null;
@@ -337,6 +383,21 @@ export const Panel = memo(function Panel(p: Props) {
           <span className="who">{rp.user.name}</span>
         </div>
       ))}
+      <div
+        ref={guideH}
+        className="guide-line h"
+        aria-hidden
+        style={{ height: g.lineWidth, marginTop: -g.lineWidth / 2, background: g.lineColor, opacity: g.lineOpacity }}
+      />
+      <div
+        ref={guideV}
+        className="guide-line v"
+        aria-hidden
+        style={{ width: g.lineWidth, marginLeft: -g.lineWidth / 2, background: g.lineColor, opacity: g.lineOpacity }}
+      />
+      <div ref={reticleEl} className="reticle-wrap" aria-hidden>
+        <Reticle shape={g.reticle} size={g.reticleSize} color={g.reticleColor} thickness={g.reticleThickness} gap={g.gap} />
+      </div>
       <div ref={crossEl} className="crosshair" aria-hidden>
         <span className="h" />
         <span className="v" />

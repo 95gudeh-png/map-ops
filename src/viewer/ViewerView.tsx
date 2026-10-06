@@ -7,7 +7,8 @@ import { SharePanel } from '../share/SharePanel';
 import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { loadCrosshair, saveCrosshair, type CrosshairSettings } from './crosshair';
+import { loadCrosshair, loadCursorGuide, saveCrosshair, saveCursorGuide, type CrosshairSettings, type CursorGuideSettings } from './crosshair';
+import { CursorGuidePanel } from './CursorGuidePanel';
 import { addStroke, clearFloorStrokes, deleteStroke, flatten, PEN_COLORS, PEN_WIDTHS, strokesOnFloor } from './drawOps';
 import { DrawToolbar } from './DrawToolbar';
 import { MarkerForm } from './MarkerForm';
@@ -71,6 +72,7 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [pendingDelete, setPendingDelete] = useState<Marker | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [crosshair, setCrosshair] = useState<CrosshairSettings>(loadCrosshair);
+  const [guide, setGuide] = useState<CursorGuideSettings>(loadCursorGuide);
   const [selectedMarker, setSelectedMarker] = useState<Id | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const shareState = useShareState(map.id);
@@ -107,18 +109,31 @@ export function ViewerView({ map, onEditMap }: Props) {
   /* ---------- 공유 뷰·십자선 ---------- */
   const view = useRef<View | null>(null);
   const cross = useRef<Vec | null>(null);
+  const cursor = useRef<Vec | null>(null);
   const hover = useRef<Vec | null>(null);
   const fitZ = useRef(1);
   const panelSize = useRef<Size>({ w: 0, h: 0 });
   const painters = useRef(new Set<Painter>());
-  const shared = useMemo<PanelShared>(() => ({ view, cross }), []);
+  const shared = useMemo<PanelShared>(() => ({ view, cross, cursor }), []);
   const probeRef = useRef(probe);
   probeRef.current = probe;
 
   const paintAll = useCallback(() => {
     cross.current = hover.current ?? probeRef.current?.w ?? null;
-    for (const p of painters.current) p();
+    for (const p of painters.current) p.paint();
   }, []);
+
+  // 마우스 이동은 매우 잦으므로 화면 갱신 주기(rAF)에 한 번만 커서 가이드를 다시 그린다
+  const cursorFrame = useRef(0);
+  const onCursor = useCallback((w: Vec | null) => {
+    cursor.current = w;
+    if (cursorFrame.current) return;
+    cursorFrame.current = requestAnimationFrame(() => {
+      cursorFrame.current = 0;
+      for (const p of painters.current) p.paintCursor();
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(cursorFrame.current), []);
   const registerPainter = useCallback((p: Painter) => {
     painters.current.add(p);
     return () => void painters.current.delete(p);
@@ -302,11 +317,19 @@ export function ViewerView({ map, onEditMap }: Props) {
     setForm(null);
   };
 
-  const updateCrosshair = (patch: Partial<CrosshairSettings>) => {
-    const next = { ...crosshair, ...patch };
-    setCrosshair(next);
-    saveCrosshair(next);
-  };
+  // 연속 조작에서도 앞의 변경을 잃지 않도록 함수형 갱신으로 합친다
+  const updateCrosshair = (patch: Partial<CrosshairSettings>) =>
+    setCrosshair((prev) => {
+      const next = { ...prev, ...patch };
+      saveCrosshair(next);
+      return next;
+    });
+  const updateGuide = (patch: Partial<CursorGuideSettings>) =>
+    setGuide((prev) => {
+      const next = { ...prev, ...patch };
+      saveCursorGuide(next);
+      return next;
+    });
 
   /* ---------- 표시 ---------- */
   const floorById = (id: Id) => map.floors.find((f) => f.id === id)!;
@@ -337,6 +360,8 @@ export function ViewerView({ map, onEditMap }: Props) {
     pen,
     onStrokeDone,
     onEraseStroke,
+    onCursor,
+    guide,
     selectedMarkerId: selectedMarker,
     registerPainter,
     onResize,
@@ -400,6 +425,14 @@ export function ViewerView({ map, onEditMap }: Props) {
         <button className="btn small" onClick={() => setStyleOpen((v) => !v)} aria-expanded={styleOpen}>
           마커 모양
         </button>
+        <button
+          className={`btn small ${guide.enabled ? 'guide-on' : ''}`}
+          onClick={() => setSettingsOpen((v) => !v)}
+          aria-expanded={settingsOpen}
+          title="마우스를 따라다니는 십자 가이드와 십자선 설정"
+        >
+          ⌖ 커서 가이드
+        </button>
         <button className="btn small ghost" onClick={onEditMap}>
           맵 편집
         </button>
@@ -413,6 +446,9 @@ export function ViewerView({ map, onEditMap }: Props) {
         </button>
       </div>
       {shareOpen && <SharePanel mapId={map.id} onClose={() => setShareOpen(false)} />}
+      {settingsOpen && (
+        <CursorGuidePanel guide={guide} crosshair={crosshair} onGuide={updateGuide} onCrosshair={updateCrosshair} onClose={() => setSettingsOpen(false)} />
+      )}
       {styleOpen && <MarkerStylePanel style={liveStyle} onChange={changeStyle} onReset={resetStyle} onClose={() => setStyleOpen(false)} />}
       {tool !== 'view' && (
         <DrawToolbar
@@ -491,23 +527,6 @@ export function ViewerView({ map, onEditMap }: Props) {
             </div>
           )}
 
-          {settingsOpen && probe && (
-            <div className="popover settings">
-              <div className="form-title">십자선 설정</div>
-              <label>
-                길이 {crosshair.length}px
-                <input type="range" min={10} max={50} value={crosshair.length} onChange={(e) => updateCrosshair({ length: Number(e.target.value) })} />
-              </label>
-              <label>
-                굵기 {crosshair.thickness}px
-                <input type="range" min={1} max={6} value={crosshair.thickness} onChange={(e) => updateCrosshair({ thickness: Number(e.target.value) })} />
-              </label>
-              <label className="color">
-                색상
-                <input type="color" value={crosshair.color} onChange={(e) => updateCrosshair({ color: e.target.value })} />
-              </label>
-            </div>
-          )}
 
           {form && (
             <div className="popover form-pop">
