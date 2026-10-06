@@ -2,6 +2,15 @@
 chcp 65001 > nul
 cd /d "%~dp0"
 
+rem 이미 켜져 있으면(다른 검은 창에서 실행 중) 새로 켜지 않고 브라우저만 연다
+powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing http://localhost:5173 -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }" > nul 2> nul
+if not errorlevel 1 (
+  echo MAP OPS 가 이미 실행 중이오. 브라우저로 여오: http://localhost:5173
+  start "" http://localhost:5173
+  timeout /t 3 > nul
+  exit /b 0
+)
+
 where npm > nul 2> nul
 if errorlevel 1 (
   echo Node.js가 설치되어 있지 않소. https://nodejs.org 에서 LTS 버전을 설치한 뒤 다시 실행하시오.
@@ -17,6 +26,9 @@ if not exist node_modules (
 echo.
 echo  MAP OPS 를 시작하오. 잠시 후 브라우저가 열리오: http://localhost:5173
 echo  이 검은 창을 닫으면 앱도 꺼지오. 맵 데이터는 브라우저에 저장되어 남소.
+echo  (평소에는 https://95gudeh-png.github.io/map-ops/ 를 쓰면 이 창이 필요 없소)
 echo.
 call npm run dev -- --open
+echo.
+echo 앱이 꺼졌거나 시작하지 못했소. 위의 메시지를 확인하시오.
 pause
