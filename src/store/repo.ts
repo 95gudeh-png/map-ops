@@ -83,8 +83,8 @@ export class Repo {
     await this.collectGarbageImages();
   }
 
-  /** 어떤 맵도 참조하지 않는 이미지를 지운다. */
-  private async collectGarbageImages() {
+  /** 어떤 맵도 참조하지 않는 이미지를 지운다(맵 삭제, 마법사 취소 후). */
+  async collectGarbageImages() {
     const used = new Set<string>();
     for (const m of this.cache.values()) for (const f of m.floors) used.add(f.imageId);
     const all = await listImageIds();

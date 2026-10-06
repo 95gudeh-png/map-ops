@@ -91,6 +91,13 @@ async function drawFloor(spec: FloorSpec): Promise<Blob> {
   return new Promise((resolve) => c.toBlob((b) => resolve(b!), 'image/png'));
 }
 
+/** 정렬 안 된 샘플 단면도 파일들(마법사 테스트용). */
+export async function sampleFloorFiles(): Promise<File[]> {
+  const files: File[] = [];
+  for (const spec of SPECS) files.push(new File([await drawFloor(spec)], `${spec.name}.png`, { type: 'image/png' }));
+  return files;
+}
+
 export async function createSampleMap(): Promise<GameMap> {
   const anchorSpec = SPECS[1]!; // 1층이 기준층
   const floors: Floor[] = [];
