@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>MAP OPS</title>
+<style>
+  :root{
+    --bg:#14171c; --panel:#1c2028; --panel2:#242a34; --line:#323a48;
+    --accent:#3ea6ff; --accent-dim:#1f3a52; --text:#e7ebf0; --text-dim:#8b96a5;
+    --danger:#e0555a; --ok:#4fbf83; --warn:#e0a83e;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,'Segoe UI',Pretendard,sans-serif;}
+  button{font-family:inherit; cursor:pointer;}
+  select{font-family:inherit; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12px;}
+  .btn{background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font-size:13px;}
+  .btn:hover{border-color:var(--accent);}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#0a1622; font-weight:600;}
+  .btn.primary:hover{opacity:.9;}
+  .btn.ghost{background:transparent; border-color:transparent; color:var(--text-dim);}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
+  input[type=text]{background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:9px 10px; font-size:14px; width:100%;}
+  input[type=text]:focus{outline:none; border-color:var(--accent);}
+
+  #topbar{display:flex; align-items:center; gap:12px; padding:14px 24px; border-bottom:1px solid var(--line); background:var(--panel);}
+  #topbar .logo{font-weight:700; letter-spacing:.5px; font-size:15px;}
+  #topbar .logo span{color:var(--accent);}
+  #topbarExtra{margin-left:auto; display:flex; align-items:center; gap:10px;}
+  #syncIndicator{font-size:11px; color:var(--text-dim); display:flex; align-items:center;}
+  #app{padding:24px; max-width:1180px; margin:0 auto;}
+
+  /* select view */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px;}
+  .mapcard{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:8px; text-align:left;}
+  .mapcard:hover{border-color:var(--accent);}
+  .mapcard .thumb{height:90px; border-radius:6px; background:var(--panel2); display:flex; overflow:hidden;}
+  .mapcard .thumb img{flex:1; object-fit:cover; width:100%;}
+  .mapcard .thumb .swatch{flex:1;}
+  .mapcard .name{font-weight:600; font-size:14px;}
+  .mapcard .meta{font-size:12px; color:var(--text-dim);}
+  .addcard{border:1.5px dashed var(--line); border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:150px; background:transparent; color:var(--text-dim);}
+  .addcard:hover{border-color:var(--accent); color:var(--accent);}
+  .addcard .plus{font-size:28px; line-height:1;}
+  .emptynote{color:var(--text-dim); font-size:13px; margin-top:6px;}
+
+  /* viewer */
+  .viewer-toolbar{display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap;}
+  .floor-tabs{display:flex; gap:6px; flex-wrap:wrap;}
+  .floor-tab{background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); border-radius:6px; padding:7px 12px; font-size:13px;}
+  .floor-tab.active{border-color:var(--accent); color:var(--accent); background:var(--accent-dim);}
+  .marker-types{display:flex; gap:6px;}
+  .mtype{border:1px solid var(--line); background:var(--panel2); color:var(--text-dim); border-radius:6px; padding:7px 10px; font-size:12px;}
+  .mtype.active{border-color:var(--accent); color:var(--accent);}
+  .toolbar-spacer{margin-left:auto;}
+  .stage-row{display:flex; gap:14px; align-items:flex-start;}
+  .stage-col{flex:1; min-width:0;}
+  .stage-col .stage-head{display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; color:var(--text-dim);}
+  #stage, .stage{position:relative; width:100%; aspect-ratio:16/10; background:#0c0e12; border:1px solid var(--line); border-radius:10px; overflow:hidden; cursor:crosshair;}
+  .sidebar{width:230px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; max-height:420px; overflow:auto; flex-shrink:0;}
+  .sidebar h4{margin:0 0 8px; font-size:12px; color:var(--text-dim); font-weight:600;}
+  .mk-row{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px;}
+  .mk-dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .mk-row .lbl{flex:1;}
+  .mk-row button{background:none; border:none; color:var(--text-dim); font-size:11px;}
+  .mk-row button:hover{color:var(--danger);}
+  .jumpbar{position:absolute; bottom:10px; left:10px; right:10px; background:rgba(20,23,28,.92); border:1px solid var(--accent); border-radius:8px; padding:10px; font-size:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .world{position:absolute; left:0; top:0; width:480px; height:300px; transform-origin:0 0;}
+  .pending-form{position:absolute; background:var(--panel); border:1px solid var(--accent); border-radius:8px; padding:10px; font-size:12px; width:200px; z-index:5;}
+  .pending-form select,.pending-form input{width:100%; margin-top:4px; margin-bottom:8px; background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:5px; padding:6px;}
+  .pending-form .chk{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); margin-bottom:4px;}
+
+  /* modal */
+  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:50;}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:12px; width:560px; max-width:92vw; max-height:88vh; overflow:auto; padding:22px;}
+  .wizard-box{background:var(--panel); border:1px solid var(--line); border-radius:12px; max-width:900px; margin:0 auto; padding:32px;}
+  .modal h3{margin:0 0 4px; font-size:16px;}
+  .modal .step-note{color:var(--text-dim); font-size:12px; margin-bottom:16px;}
+  .modal-actions{display:flex; justify-content:space-between; margin-top:20px;}
+  .floor-row{display:flex; align-items:center; gap:10px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px;}
+  .floor-row .fname{flex:1; background:transparent; border:none; color:var(--text); font-size:13px;}
+  .floor-row .fname:focus{outline:none;}
+  .floor-row .thumb-sm{width:40px; height:28px; border-radius:4px; background:#0c0e12; overflow:hidden; flex-shrink:0;}
+  .floor-row .thumb-sm img{width:100%; height:100%; object-fit:cover;}
+  .calib-stage{position:relative; width:100%; aspect-ratio:16/10; background:#0c0e12; border:1px solid var(--line); border-radius:8px; overflow:hidden;}
+  .calib-tip{font-size:12px; color:var(--text-dim); margin:8px 0 12px;}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="logo">MAP <span>OPS</span></div>
+  <div id="topbarExtra"></div>
+</div>
+<div id="app"></div>
+
+<script>
+var state = {
+  view: 'select',
+  maps: [],
+  selectedMapId: null,
+  activeFloor: null,
+  markerType: 'objective',
+  pending: null,
+  probe: null,
+  probeSettingsOpen: false,
+  crosshair: { length: 22, thickness: 2, color: '#3ea6ff' },
+  ghost: false,
+  splitView: false,
+  floorA: null,
+  floorB: null,
+  viewportMain: null,
+  viewportA: null,
+  viewportB: null
+};
+function defaultViewport(){ return {zoom:1, panX:0, panY:0}; }
+function resetViewports(){
+  state.viewportMain = defaultViewport();
+  state.viewportA = defaultViewport();
+  state.viewportB = defaultViewport();
+  state.probe = null;
+}
+resetViewports();
+var nextId = 1;
+function uid(){ return nextId++; }
+
+var MTYPES = {
+  objective: {label:'목표', color:'#e0a83e'},
+  camera:    {label:'카메라', color:'#3ea6ff'},
+  connector: {label:'층간연결', color:'#e0555a'},
+  note:      {label:'메모', color:'#8b96a5'}
+};
+
+/* ---------- SHARED STORAGE SYNC ---------- */
+var sharedAvailable = (typeof window.storage !== 'undefined');
+var syncStatus = 'idle'; // idle | synced | error | local
+
+function bumpNextIdFromMaps(maps){
+  maps.forEach(function(m){
+    nextId = Math.max(nextId, m.id+1);
+    m.floors.forEach(function(f){ nextId = Math.max(nextId, f.id+1); });
+    m.markers.forEach(function(mk){ nextId = Math.max(nextId, mk.id+1); });
+  });
+}
+
+async function pushMapsToStorage(){
+  if(!sharedAvailable) return;
+  try{
+    var res = await window.storage.set('maps-data', JSON.stringify(state.maps), true);
+    syncStatus = res ? 'synced' : 'error';
+  }catch(e){
+    console.error('storage set failed', e);
+    syncStatus = 'error';
+  }
+  updateSyncIndicator();
+}
+
+async function pullMapsFromStorage(silent){
+  if(!sharedAvailable) return;
+  try{
+    var res = await window.storage.get('maps-data', true);
+    if(res && res.value){
+      var remote = JSON.parse(res.value);
+      state.maps = remote;
+      bumpNextIdFromMaps(remote);
+      syncStatus = 'synced';
+      render();
+    }
+  }catch(e){
+    if(!silent) console.error('storage get failed (no data yet?)', e);
+    syncStatus = state.maps.length ? syncStatus : 'local';
+  }
+  updateSyncIndicator();
+}
+
+function updateSyncIndicator(){
+  var el = document.getElementById('syncIndicator');
+  if(!el) return;
+  var map = {synced:['#4fbf83','공유 동기화됨'], error:['#e0555a','동기화 실패'], local:['#8b96a5','이 브라우저에만 저장'], idle:['#8b96a5','대기 중']};
+  var s = sharedAvailable ? (map[syncStatus] || map.idle) : map.local;
+  el.innerHTML = '<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:'+s[0]+'; margin-right:5px;"></span>'+s[1];
+}
+
+/* ---------- ROOT RENDER ---------- */
+function render(){
+  var app = document.getElementById('app');
+  var extra = document.getElementById('topbarExtra');
+  extra.innerHTML = '';
+
+  if(state.view === 'viewer'){
+    var back = document.createElement('button');
+    back.className = 'btn ghost';
+    back.textContent = '← 맵 목록';
+    back.onclick = function(){ state.view='select'; render(); };
+    extra.appendChild(back);
+  }
+  if(state.view === 'wizard'){
+    var cancelWiz = document.createElement('button');
+    cancelWiz.className = 'btn ghost';
+    cancelWiz.textContent = '✕ 마법사 나가기';
+    cancelWiz.onclick = cancelWizard;
+    extra.appendChild(cancelWiz);
+  }
+
+  var refreshBtn = document.createElement('button');
+  refreshBtn.className = 'btn ghost';
+  refreshBtn.style.fontSize = '12px';
+  refreshBtn.textContent = '⟳ 동기화';
+  refreshBtn.onclick = function(){ pullMapsFromStorage(false); };
+  extra.appendChild(refreshBtn);
+
+  var sync = document.createElement('div');
+  sync.id = 'syncIndicator';
+  extra.appendChild(sync);
+  updateSyncIndicator();
+
+  app.innerHTML = '';
+  if(state.view === 'select') renderSelect(app);
+  else if(state.view === 'viewer') renderViewer(app);
+  else if(state.view === 'wizard') renderWizard(app);
+}
+
+/* ---------- SELECT VIEW ---------- */
+function renderSelect(app){
+  var wrap = document.createElement('div');
+  var grid = document.createElement('div');
+  grid.className = 'grid';
+
+  state.maps.forEach(function(m){
+    var card = document.createElement('button');
+    card.className = 'mapcard';
+    var thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    var f0 = m.floors[0];
+    if(f0 && f0.img){
+      var im = document.createElement('img'); im.src = f0.img; thumb.appendChild(im);
+    } else {
+      var sw = document.createElement('div'); sw.className='swatch'; sw.style.background='#242a34'; thumb.appendChild(sw);
+    }
+    var name = document.createElement('div'); name.className='name'; name.textContent = m.name;
+    var meta = document.createElement('div'); meta.className='meta'; meta.textContent = m.floors.length+'개 층 · 마커 '+m.markers.length+'개';
+    card.appendChild(thumb); card.appendChild(name); card.appendChild(meta);
+    card.onclick = function(){
+      state.selectedMapId = m.id;
+      state.activeFloor = m.floors[0].id;
+      state.floorA = m.floors[0].id;
+      state.floorB = m.floors.length > 1 ? m.floors[1].id : m.floors[0].id;
+      resetViewports();
+      state.view = 'viewer';
+      render();
+    };
+    grid.appendChild(card);
+  });
+
+  var addCard = document.createElement('button');
+  addCard.className = 'addcard';
+  addCard.innerHTML = '<div class="plus">+</div><div>맵 추가</div>';
+  addCard.onclick = openAddModal;
+  grid.appendChild(addCard);
+
+  wrap.appendChild(grid);
+  if(state.maps.length === 0){
+    var note = document.createElement('div');
+    note.className = 'emptynote';
+    note.textContent = '등록된 맵이 없소. 우하단의 "맵 추가"로 시작하시오.';
+    wrap.appendChild(note);
+  }
+  app.appendChild(wrap);
+}
+
+/* ---------- VIEWER ---------- */
+function getMap(){ return state.maps.find(function(m){ return m.id === state.selectedMapId; }); }
+
+function renderViewer(app){
+  var map = getMap();
+  if(!map){ state.view='select'; render(); return; }
+
+  var toolbar = document.createElement('div');
+  toolbar.className = 'viewer-toolbar';
+
+  if(!state.splitView){
+    var tabs = document.createElement('div');
+    tabs.className = 'floor-tabs';
+    map.floors.forEach(function(f){
+      var t = document.createElement('button');
+      t.className = 'floor-tab' + (f.id === state.activeFloor ? ' active' : '');
+      t.textContent = f.name;
+      t.onclick = function(){ state.activeFloor = f.id; state.pending=null; render(); };
+      tabs.appendChild(t);
+    });
+    toolbar.appendChild(tabs);
+  }
+
+  var splitBtn = document.createElement('button');
+  splitBtn.className = 'btn' + (state.splitView ? ' primary' : '');
+  splitBtn.style.fontSize = '12px';
+  splitBtn.textContent = state.splitView ? '단일 보기로' : '⬜⬜ 2단 비교';
+  splitBtn.onclick = function(){ state.splitView = !state.splitView; state.pending=null; render(); };
+  toolbar.appendChild(splitBtn);
+
+  var resetBtn = document.createElement('button');
+  resetBtn.className = 'btn'; resetBtn.style.fontSize='12px';
+  resetBtn.textContent = '⤾ 보기 리셋';
+  resetBtn.title = '확대/이동 초기화';
+  resetBtn.onclick = function(){ resetViewports(); render(); };
+  toolbar.appendChild(resetBtn);
+
+  var ghostLbl = document.createElement('label');
+  ghostLbl.style.cssText = 'display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-dim);';
+  var ghostChk = document.createElement('input'); ghostChk.type='checkbox'; ghostChk.checked = state.ghost;
+  ghostChk.onchange = function(){ state.ghost = ghostChk.checked; render(); };
+  ghostLbl.appendChild(ghostChk); ghostLbl.appendChild(document.createTextNode('이전 층 겹쳐보기'));
+  if(!state.splitView) toolbar.appendChild(ghostLbl);
+
+  var mtypes = document.createElement('div');
+  mtypes.className = 'marker-types toolbar-spacer';
+  Object.keys(MTYPES).forEach(function(k){
+    var b = document.createElement('button');
+    b.className = 'mtype' + (state.markerType===k?' active':'');
+    b.textContent = MTYPES[k].label;
+    b.onclick = function(){ state.markerType = k; render(); };
+    mtypes.appendChild(b);
+  });
+  toolbar.appendChild(mtypes);
+
+  app.appendChild(toolbar);
+
+  var row = document.createElement('div');
+  row.className = 'stage-row';
+
+  if(state.splitView){
+    row.appendChild(makeSplitCol(map, 'A'));
+    row.appendChild(makeSplitCol(map, 'B'));
+  } else {
+    var stage = document.createElement('div');
+    stage.id = 'stage';
+    buildStageContent(stage, map, state.activeFloor, true, state.viewportMain, function(fid){ state.activeFloor = fid; render(); });
+    row.appendChild(stage);
+
+    var sidebar = document.createElement('div');
+    sidebar.className = 'sidebar';
+    var h4 = document.createElement('h4'); h4.textContent = '이 층의 마커';
+    sidebar.appendChild(h4);
+    var onFloor = map.markers.filter(function(mk){ return mk.floors.indexOf(state.activeFloor) !== -1; });
+    if(onFloor.length === 0){
+      var e = document.createElement('div'); e.style.cssText='color:var(--text-dim); font-size:12px;'; e.textContent='아직 없소. 지도를 클릭해 추가하시오.';
+      sidebar.appendChild(e);
+    }
+    onFloor.forEach(function(mk){
+      var r = document.createElement('div'); r.className='mk-row';
+      var dot = document.createElement('div'); dot.className='mk-dot'; dot.style.background = MTYPES[mk.type].color;
+      var lbl = document.createElement('div'); lbl.className='lbl'; lbl.textContent = mk.label || MTYPES[mk.type].label;
+      var del = document.createElement('button'); del.textContent='삭제';
+      del.onclick = function(){ map.markers = map.markers.filter(function(x){return x.id!==mk.id;}); pushMapsToStorage(); render(); };
+      r.appendChild(dot); r.appendChild(lbl); r.appendChild(del);
+      sidebar.appendChild(r);
+    });
+    row.appendChild(sidebar);
+  }
+
+  app.appendChild(row);
+}
+
+function makeSplitCol(map, which){
+  var col = document.createElement('div');
+  col.className = 'stage-col';
+  var head = document.createElement('div');
+  head.className = 'stage-head';
+  var sel = document.createElement('select');
+  map.floors.forEach(function(f){
+    var opt = document.createElement('option');
+    opt.value = f.id; opt.textContent = f.name;
+    if(f.id === (which==='A'?state.floorA:state.floorB)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.onchange = function(){
+    if(which==='A') state.floorA = Number(sel.value); else state.floorB = Number(sel.value);
+    render();
+  };
+  head.appendChild(document.createTextNode(which==='A' ? '왼쪽:' : '오른쪽:'));
+  head.appendChild(sel);
+  col.appendChild(head);
+
+  var stage = document.createElement('div');
+  stage.className = 'stage';
+  stage.id = 'split-stage-' + which;
+  var floorId = which==='A' ? state.floorA : state.floorB;
+  var vp = which==='A' ? state.viewportA : state.viewportB;
+  buildStageContent(stage, map, floorId, true, vp, function(fid){
+    if(which==='A') state.floorA = fid; else state.floorB = fid;
+    render();
+  });
+  col.appendChild(stage);
+  return col;
+}
+
+var panDrag = null;
+document.addEventListener('mousemove', function(e){
+  if(!panDrag) return;
+  var dx = e.clientX - panDrag.sx, dy = e.clientY - panDrag.sy;
+  if(Math.abs(dx) > 4 || Math.abs(dy) > 4) panDrag.moved = true;
+  if(panDrag.moved){
+    panDrag.viewport.panX = panDrag.ox + dx;
+    panDrag.viewport.panY = panDrag.oy + dy;
+    var world = panDrag.stage.querySelector('.world');
+    if(world){ world.style.left = panDrag.viewport.panX+'px'; world.style.top = panDrag.viewport.panY+'px'; }
+    panDrag.stage.style.cursor = 'grabbing';
+    syncSplitViewport(panDrag.viewport);
+  }
+});
+document.addEventListener('mouseup', function(e){
+  if(!panDrag) return;
+  var p = panDrag; panDrag = null;
+  p.stage.style.cursor = 'crosshair';
+  if(!p.moved){
+    var rect = p.stage.getBoundingClientRect();
+    var screenX = e.clientX - rect.left, screenY = e.clientY - rect.top;
+    var canvasX = Math.round((screenX - p.viewport.panX) / p.viewport.zoom);
+    var canvasY = Math.round((screenY - p.viewport.panY) / p.viewport.zoom);
+    state.pending = null;
+    state.probe = {x:canvasX, y:canvasY};
+    render();
+  }
+});
+
+function clampZoom(z){ return Math.max(0.5, Math.min(6, z)); }
+
+function syncSplitViewport(viewport){
+  if(!state.splitView) return;
+  var other, otherStageId;
+  if(viewport === state.viewportA){ other = state.viewportB; otherStageId = 'split-stage-B'; }
+  else if(viewport === state.viewportB){ other = state.viewportA; otherStageId = 'split-stage-A'; }
+  else return;
+  other.zoom = viewport.zoom; other.panX = viewport.panX; other.panY = viewport.panY;
+  var otherStage = document.getElementById(otherStageId);
+  if(otherStage){
+    var w = otherStage.querySelector('.world');
+    if(w){ w.style.left = other.panX+'px'; w.style.top = other.panY+'px'; w.style.transform = 'scale('+other.zoom+')'; }
+  }
+}
+
+function buildStageContent(stage, map, floorId, interactive, viewport, onJumpFloor){
+  stage.innerHTML = '';
+  var floor = map.floors.find(function(f){ return f.id === floorId; });
+  var idx = map.floors.findIndex(function(f){ return f.id === floorId; });
+
+  var world = document.createElement('div');
+  world.className = 'world';
+  world.style.left = viewport.panX+'px';
+  world.style.top = viewport.panY+'px';
+  world.style.transform = 'scale('+viewport.zoom+')';
+
+  if(state.ghost && !state.splitView && idx > 0){
+    world.appendChild(floorImgEl(map.floors[idx-1], true));
+  }
+  world.appendChild(floorImgEl(floor, false));
+
+  map.markers.forEach(function(mk){
+    if(mk.floors.indexOf(floorId) === -1) return;
+    var dot = document.createElement('div');
+    dot.style.cssText = 'position:absolute; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; border:2px solid #0c0e12; left:'+mk.x+'px; top:'+mk.y+'px; background:'+MTYPES[mk.type].color+'; cursor:pointer;';
+    dot.title = mk.label || MTYPES[mk.type].label;
+    dot.onmousedown = function(e){ e.stopPropagation(); };
+    dot.onmouseenter = function(){ setHoverProbe(mk.x, mk.y); };
+    dot.onmouseleave = function(){ clearHoverProbe(); };
+    dot.onclick = function(e){
+      e.stopPropagation();
+      state.probe = {x:mk.x, y:mk.y};
+      render();
+    };
+    world.appendChild(dot);
+  });
+
+  var cross = document.createElement('div');
+  cross.className = 'crosshair-mark';
+  cross.style.cssText = 'position:absolute; width:0; height:0; pointer-events:none; display:none;';
+  if(state.probe){
+    cross.style.display = 'block';
+    cross.style.left = state.probe.x+'px'; cross.style.top = state.probe.y+'px';
+    cross.innerHTML = crosshairInnerHTML(state.crosshair);
+  }
+  world.appendChild(cross);
+
+  stage.appendChild(world);
+
+  if(interactive){
+    stage.onwheel = function(e){
+      e.preventDefault();
+      var rect = stage.getBoundingClientRect();
+      var screenX = e.clientX - rect.left, screenY = e.clientY - rect.top;
+      var canvasX = (screenX - viewport.panX) / viewport.zoom;
+      var canvasY = (screenY - viewport.panY) / viewport.zoom;
+      var factor = e.deltaY < 0 ? 1.15 : (1/1.15);
+      viewport.zoom = clampZoom(viewport.zoom * factor);
+      viewport.panX = screenX - canvasX * viewport.zoom;
+      viewport.panY = screenY - canvasY * viewport.zoom;
+      world.style.left = viewport.panX+'px'; world.style.top = viewport.panY+'px';
+      world.style.transform = 'scale('+viewport.zoom+')';
+      syncSplitViewport(viewport);
+    };
+    stage.onmousedown = function(e){
+      if(e.target.closest('.pending-form') || e.target.closest('.jumpbar')) return;
+      panDrag = {viewport:viewport, stage:stage, floorId:floorId, sx:e.clientX, sy:e.clientY, ox:viewport.panX, oy:viewport.panY, moved:false};
+    };
+    if(state.probe){
+      renderProbeBar(stage, map, floorId, viewport, onJumpFloor);
+    }
+    if(state.pending && state.pending.floorId === floorId){
+      openPendingForm(stage, map, floorId, state.pending);
+    }
+  }
+}
+
+function floorImgEl(floor, isGhost){
+  var el = document.createElement('div');
+  var scale = floor.scale || 1;
+  el.style.cssText = 'position:absolute; left:'+floor.offX+'px; top:'+floor.offY+'px; width:'+(480*scale)+'px; height:'+(300*scale)+'px; border-radius:6px; overflow:hidden;';
+  if(isGhost) el.style.opacity = '.3';
+  if(floor.img){
+    var img = document.createElement('img');
+    img.src = floor.img; img.style.cssText='width:100%; height:100%; object-fit:cover; pointer-events:none;';
+    el.appendChild(img);
+  } else {
+    el.style.background = '#20242c';
+    el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
+    el.style.color='var(--text-dim)'; el.style.fontSize='13px';
+    el.textContent = floor.name;
+  }
+  return el;
+}
+
+function renderProbeBar(stage, map, floorId, viewport, onJumpFloor){
+  var old = stage.querySelector('.jumpbar'); if(old) old.remove();
+  var bar = document.createElement('div');
+  bar.className = 'jumpbar';
+  bar.onmousedown = function(e){ e.stopPropagation(); };
+
+  var text = document.createElement('span');
+  text.textContent = '선택 위치:';
+  bar.appendChild(text);
+
+  if(onJumpFloor){
+    map.floors.filter(function(f){ return f.id !== floorId; }).forEach(function(f){
+      var b = document.createElement('button');
+      b.className = 'btn';
+      b.style.padding = '5px 10px';
+      b.textContent = f.name + '에서 보기';
+      b.onclick = function(){ onJumpFloor(f.id); };
+      bar.appendChild(b);
+    });
+  }
+
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn primary';
+  addBtn.style.padding = '5px 10px';
+  addBtn.textContent = '+ 여기에 마커 추가';
+  addBtn.onclick = function(){
+    var rect = stage.getBoundingClientRect();
+    var screenX = state.probe.x * viewport.zoom + viewport.panX;
+    var screenY = state.probe.y * viewport.zoom + viewport.panY;
+    screenX = Math.max(0, Math.min(screenX, rect.width));
+    screenY = Math.max(0, Math.min(screenY, rect.height));
+    state.pending = {x:state.probe.x, y:state.probe.y, screenX:screenX, screenY:screenY, floorId:floorId};
+    render();
+  };
+  bar.appendChild(addBtn);
+
+  var settingsBtn = document.createElement('button');
+  settingsBtn.className = 'btn ghost';
+  settingsBtn.style.padding = '5px 8px';
+  settingsBtn.textContent = '⚙';
+  settingsBtn.title = '크로스헤어 설정';
+  settingsBtn.onclick = function(e){ e.stopPropagation(); state.probeSettingsOpen = !state.probeSettingsOpen; render(); };
+  bar.appendChild(settingsBtn);
+
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'btn ghost';
+  closeBtn.style.padding = '5px 8px';
+  closeBtn.textContent = '닫기';
+  closeBtn.onclick = function(){ state.probe = null; state.pending = null; state.probeSettingsOpen = false; render(); };
+  bar.appendChild(closeBtn);
+
+  stage.appendChild(bar);
+
+  if(state.probeSettingsOpen){
+    var panel = document.createElement('div');
+    panel.className = 'pending-form';
+    panel.style.left = 'auto'; panel.style.right = '10px'; panel.style.bottom = '54px'; panel.style.top='auto';
+    panel.style.width = '190px';
+    panel.onmousedown = function(e){ e.stopPropagation(); };
+    panel.innerHTML = '<div style="color:var(--text-dim); margin-bottom:6px;">크로스헤어 설정</div>';
+
+    var lenLbl = document.createElement('div'); lenLbl.style.cssText='font-size:11px; color:var(--text-dim); margin-bottom:2px;'; lenLbl.textContent = '길이: '+state.crosshair.length+'px';
+    var lenInput = document.createElement('input'); lenInput.type='range'; lenInput.min='10'; lenInput.max='50'; lenInput.value=state.crosshair.length; lenInput.style.width='100%'; lenInput.style.marginBottom='8px';
+    lenInput.oninput = function(){ state.crosshair.length = Number(lenInput.value); lenLbl.textContent = '길이: '+lenInput.value+'px'; refreshAllProbes(); };
+
+    var thickLbl = document.createElement('div'); thickLbl.style.cssText='font-size:11px; color:var(--text-dim); margin-bottom:2px;'; thickLbl.textContent = '굵기: '+state.crosshair.thickness+'px';
+    var thickInput = document.createElement('input'); thickInput.type='range'; thickInput.min='1'; thickInput.max='6'; thickInput.value=state.crosshair.thickness; thickInput.style.width='100%'; thickInput.style.marginBottom='8px';
+    thickInput.oninput = function(){ state.crosshair.thickness = Number(thickInput.value); thickLbl.textContent = '굵기: '+thickInput.value+'px'; refreshAllProbes(); };
+
+    var colorLbl = document.createElement('div'); colorLbl.style.cssText='font-size:11px; color:var(--text-dim); margin-bottom:2px;'; colorLbl.textContent = '색상';
+    var colorInput = document.createElement('input'); colorInput.type='color'; colorInput.value=state.crosshair.color; colorInput.style.width='100%'; colorInput.style.padding='0'; colorInput.style.height='28px';
+    colorInput.oninput = function(){ state.crosshair.color = colorInput.value; refreshAllProbes(); };
+
+    panel.appendChild(lenLbl); panel.appendChild(lenInput);
+    panel.appendChild(thickLbl); panel.appendChild(thickInput);
+    panel.appendChild(colorLbl); panel.appendChild(colorInput);
+    stage.appendChild(panel);
+  }
+}
+
+function crosshairInnerHTML(ch){
+  return '<div style="position:absolute; left:'+(-ch.length/2)+'px; top:'+(-ch.thickness/2)+'px; width:'+ch.length+'px; height:'+ch.thickness+'px; background:'+ch.color+';"></div>'+
+    '<div style="position:absolute; left:'+(-ch.thickness/2)+'px; top:'+(-ch.length/2)+'px; width:'+ch.thickness+'px; height:'+ch.length+'px; background:'+ch.color+';"></div>';
+}
+
+function setHoverProbe(x, y){
+  document.querySelectorAll('.crosshair-mark').forEach(function(el){
+    el.style.display = 'block';
+    el.style.left = x+'px'; el.style.top = y+'px';
+    el.innerHTML = crosshairInnerHTML(state.crosshair);
+  });
+}
+
+function clearHoverProbe(){
+  if(state.probe){
+    document.querySelectorAll('.crosshair-mark').forEach(function(el){
+      el.style.display = 'block';
+      el.style.left = state.probe.x+'px'; el.style.top = state.probe.y+'px';
+      el.innerHTML = crosshairInnerHTML(state.crosshair);
+    });
+  } else {
+    document.querySelectorAll('.crosshair-mark').forEach(function(el){ el.style.display = 'none'; });
+  }
+}
+
+function refreshAllProbes(){
+  document.querySelectorAll('.crosshair-mark').forEach(function(el){
+    el.innerHTML = crosshairInnerHTML(state.crosshair);
+  });
+}
+
+function openPendingForm(stage, map, floorId, pending){
+  var old = stage.querySelector('.pending-form'); if(old) old.remove();
+  var form = document.createElement('div');
+  form.className = 'pending-form';
+  form.onmousedown = function(e){ e.stopPropagation(); };
+  var rect = stage.getBoundingClientRect();
+  var left = Math.min(pending.screenX+10, Math.max(0, rect.width-210));
+  var top = Math.min(pending.screenY+10, Math.max(0, rect.height-170));
+  form.style.left = left+'px'; form.style.top = top+'px';
+
+  var labelInput = document.createElement('input');
+  labelInput.type='text'; labelInput.placeholder='마커 이름';
+
+  var typeNote = document.createElement('div');
+  typeNote.style.cssText='color:var(--text-dim); margin-bottom:6px;';
+  typeNote.textContent = '유형: ' + MTYPES[state.markerType].label;
+
+  form.appendChild(typeNote);
+  form.appendChild(labelInput);
+
+  var otherFloorsBox = null;
+  if(state.markerType === 'connector'){
+    var note = document.createElement('div');
+    note.style.cssText='color:var(--text-dim); margin-bottom:4px;';
+    note.textContent = '연결될 다른 층 선택:';
+    form.appendChild(note);
+    otherFloorsBox = document.createElement('div');
+    map.floors.filter(function(f){return f.id!==floorId;}).forEach(function(f){
+      var lbl = document.createElement('label'); lbl.className='chk';
+      var cb = document.createElement('input'); cb.type='checkbox'; cb.value=f.id;
+      lbl.appendChild(cb); lbl.appendChild(document.createTextNode(f.name));
+      otherFloorsBox.appendChild(lbl);
+    });
+    form.appendChild(otherFloorsBox);
+  }
+
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex; gap:6px; margin-top:6px;';
+  var addBtn = document.createElement('button'); addBtn.className='btn primary'; addBtn.style.padding='6px 10px'; addBtn.textContent='추가';
+  var cancelBtn = document.createElement('button'); cancelBtn.className='btn ghost'; cancelBtn.style.padding='6px 10px'; cancelBtn.textContent='취소';
+  addBtn.onclick = function(e){
+    e.stopPropagation();
+    var floors = [floorId];
+    if(otherFloorsBox){
+      otherFloorsBox.querySelectorAll('input:checked').forEach(function(cb){ floors.push(Number(cb.value)); });
+    }
+    map.markers.push({id:uid(), x:pending.x, y:pending.y, type:state.markerType, label:labelInput.value, floors:floors});
+    state.pending = null;
+    pushMapsToStorage();
+    render();
+  };
+  cancelBtn.onclick = function(e){ e.stopPropagation(); state.pending=null; render(); };
+  actions.appendChild(addBtn); actions.appendChild(cancelBtn);
+  form.appendChild(actions);
+  form.onclick = function(e){ e.stopPropagation(); };
+  stage.appendChild(form);
+  labelInput.focus();
+}
+
+/* ---------- ADD MAP WIZARD (full page) ---------- */
+var draft = null;
+
+function openAddModal(){
+  var f0 = {id:uid(), name:'1층', img:null, offX:0, offY:0, scale:1};
+  draft = { name:'', floors:[f0], step:1, showCompareGrid:true, anchorId:f0.id };
+  state.view = 'wizard';
+  render();
+}
+
+function cancelWizard(){
+  document.onmousemove = null; document.onmouseup = null;
+  draft = null;
+  state.view = 'select';
+  render();
+}
+
+function rerenderWizard(){
+  render();
+}
+
+function renderWizard(app){
+  var box = document.createElement('div');
+  box.className = 'wizard-box';
+  app.appendChild(box);
+  if(draft.step === 1) renderStep1(box);
+  else if(draft.step === 2) renderStep2(box);
+  else if(draft.step === 3) renderStep3(box);
+}
+
+function renderStep1(modal){
+  modal.innerHTML = '';
+  var h = document.createElement('h3'); h.textContent = '1. 맵 이름';
+  var note = document.createElement('div'); note.className='step-note'; note.textContent = '새로 추가할 맵의 이름을 입력하시오.';
+  var input = document.createElement('input'); input.type='text'; input.value = draft.name; input.placeholder='예: 은행';
+  input.oninput = function(){ draft.name = input.value; };
+  modal.appendChild(h); modal.appendChild(note); modal.appendChild(input);
+
+  var actions = document.createElement('div'); actions.className='modal-actions';
+  var cancel = document.createElement('button'); cancel.className='btn ghost'; cancel.textContent='취소'; cancel.onclick=cancelWizard;
+  var next = document.createElement('button'); next.className='btn primary'; next.textContent='다음';
+  next.onclick = function(){ if(!draft.name.trim()){ input.style.borderColor='var(--danger)'; return; } draft.step=2; rerenderWizard(); };
+  actions.appendChild(cancel); actions.appendChild(next);
+  modal.appendChild(actions);
+  input.focus();
+}
+
+function setAnchor(newAnchorId){
+  var newAnchor = draft.floors.find(function(f){ return f.id === newAnchorId; });
+  if(!newAnchor) return;
+  draft.floors.forEach(function(f){
+    if(f.id === newAnchorId) return;
+    f.relOffX = f.offX - newAnchor.offX;
+    f.relOffY = f.offY - newAnchor.offY;
+    f.relScale = (f.scale || 1) / (newAnchor.scale || 1);
+  });
+  draft.anchorId = newAnchorId;
+}
+
+function calibTargets(){
+  return draft.floors.filter(function(f){ return f.id !== draft.anchorId; });
+}
+
+function renderStep2(modal){
+  modal.innerHTML = '';
+  var h = document.createElement('h3'); h.textContent = '2. 층별 단면도 업로드';
+  var note = document.createElement('div'); note.className='step-note'; note.textContent = '층을 추가하고 각 층의 단면도 이미지를 올리시오. ★ 표시된 층이 전체 좌표의 기준(고정)이 되며, 다른 층들은 이 층을 기준으로 맞춰지오. 최소 1개 층이 필요하오.';
+  modal.appendChild(h); modal.appendChild(note);
+
+  var list = document.createElement('div');
+  draft.floors.forEach(function(f, i){
+    var isAnchor = f.id === draft.anchorId;
+    var row = document.createElement('div'); row.className='floor-row';
+    if(isAnchor) row.style.borderColor = 'var(--accent)';
+    row.draggable = true;
+    row.dataset.idx = i;
+
+    var handle = document.createElement('div');
+    handle.textContent = '⠿';
+    handle.title = '드래그해서 순서 변경';
+    handle.style.cssText = 'cursor:grab; color:var(--text-dim); font-size:16px; padding:0 2px; flex-shrink:0;';
+    row.appendChild(handle);
+
+    var anchorBtn = document.createElement('button');
+    anchorBtn.textContent = isAnchor ? '★' : '☆';
+    anchorBtn.title = isAnchor ? '기준층' : '이 층을 기준층으로 지정';
+    anchorBtn.style.cssText = 'background:none; border:none; font-size:16px; color:'+(isAnchor?'var(--warn)':'var(--text-dim)')+'; flex-shrink:0; padding:0 4px;';
+    anchorBtn.onclick = function(){ setAnchor(f.id); renderStep2(modal); };
+    row.appendChild(anchorBtn);
+
+    var thumb = document.createElement('div'); thumb.className='thumb-sm';
+    if(f.img){ var im=document.createElement('img'); im.src=f.img; thumb.appendChild(im); }
+    var nameIn = document.createElement('input'); nameIn.className='fname'; nameIn.type='text'; nameIn.value=f.name;
+    nameIn.oninput = function(){ f.name = nameIn.value; };
+    var uploadBtn = document.createElement('button'); uploadBtn.className='btn'; uploadBtn.style.fontSize='12px'; uploadBtn.textContent = f.img ? '이미지 변경' : '이미지 업로드';
+    var fileIn = document.createElement('input'); fileIn.type='file'; fileIn.accept='image/*'; fileIn.style.display='none';
+    fileIn.onchange = function(e){
+      var file = e.target.files[0]; if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev){ f.img = ev.target.result; renderStep2(modal); };
+      reader.readAsDataURL(file);
+    };
+    uploadBtn.onclick = function(){ fileIn.click(); };
+    var delBtn = document.createElement('button'); delBtn.className='btn ghost'; delBtn.style.fontSize='12px'; delBtn.textContent='삭제';
+    delBtn.onclick = function(){
+      if(draft.floors.length <= 1) return;
+      if(isAnchor){
+        var replacement = draft.floors.find(function(x){ return x.id !== f.id; });
+        setAnchor(replacement.id);
+      }
+      draft.floors.splice(i,1);
+      renderStep2(modal);
+    };
+
+    row.ondragstart = function(e){
+      row.style.opacity = '.4';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(i));
+    };
+    row.ondragend = function(){ row.style.opacity = '1'; };
+    row.ondragover = function(e){ e.preventDefault(); row.style.borderColor = 'var(--accent)'; };
+    row.ondragleave = function(){ row.style.borderColor = isAnchor ? 'var(--accent)' : 'var(--line)'; };
+    row.ondrop = function(e){
+      e.preventDefault();
+      var fromIdx = Number(e.dataTransfer.getData('text/plain'));
+      var toIdx = Number(row.dataset.idx);
+      if(fromIdx === toIdx) return;
+      var moved = draft.floors.splice(fromIdx, 1)[0];
+      draft.floors.splice(toIdx, 0, moved);
+      renderStep2(modal);
+    };
+
+    row.appendChild(thumb); row.appendChild(nameIn); row.appendChild(uploadBtn); row.appendChild(fileIn); row.appendChild(delBtn);
+    list.appendChild(row);
+  });
+  modal.appendChild(list);
+
+  var orderNote = document.createElement('div');
+  orderNote.style.cssText = 'font-size:11px; color:var(--text-dim); margin:-2px 0 10px;';
+  orderNote.textContent = '⠿ 을(를) 드래그해서 목록 순서를(정렬 진행 순서에만 영향) 바꿀 수 있고, ★를 눌러 기준층을 바꿀 수 있소.';
+  modal.insertBefore(orderNote, list);
+
+  var addFloorBtn = document.createElement('button');
+  addFloorBtn.className = 'btn'; addFloorBtn.style.fontSize='12px'; addFloorBtn.textContent='+ 층 추가';
+  addFloorBtn.onclick = function(){ draft.floors.push({id:uid(), name:(draft.floors.length+1)+'층', img:null, offX:0, offY:0, scale:1}); renderStep2(modal); };
+  modal.appendChild(addFloorBtn);
+
+  var multiBtn = document.createElement('button');
+  multiBtn.className = 'btn'; multiBtn.style.fontSize='12px'; multiBtn.style.marginLeft='6px';
+  multiBtn.textContent = '+ 여러 이미지 한번에 추가';
+  var multiInput = document.createElement('input');
+  multiInput.type = 'file'; multiInput.accept = 'image/*'; multiInput.multiple = true; multiInput.style.display='none';
+  multiInput.onchange = function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    if(files.length === 0) return;
+    var readOne = function(file){
+      return new Promise(function(resolve, reject){
+        var reader = new FileReader();
+        reader.onload = function(ev){ resolve(ev.target.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    };
+    Promise.all(files.map(readOne)).then(function(dataUrls){
+      dataUrls.forEach(function(durl){
+        draft.floors.push({id:uid(), name:(draft.floors.length+1)+'층', img:durl, offX:0, offY:0, scale:1});
+      });
+      renderStep2(modal);
+    });
+  };
+  multiBtn.onclick = function(){ multiInput.click(); };
+  modal.appendChild(multiBtn);
+  modal.appendChild(multiInput);
+
+  var multiNote = document.createElement('div');
+  multiNote.style.cssText = 'font-size:11px; color:var(--text-dim); margin-top:6px;';
+  multiNote.textContent = '파일 선택 창에서 Ctrl(맥은 Cmd) 또는 Shift를 누른 채 여러 장을 고르면, 선택한 순서대로 층이 한번에 만들어지오. 이름과 순서는 나중에 조정할 수 있소.';
+  modal.appendChild(multiNote);
+
+  var actions = document.createElement('div'); actions.className='modal-actions';
+  var back = document.createElement('button'); back.className='btn ghost'; back.textContent='이전'; back.onclick=function(){ draft.step=1; rerenderWizard(); };
+  var next = document.createElement('button'); next.className='btn primary';
+  next.textContent = draft.floors.length > 1 ? '다음' : '완료 · 맵 저장';
+  next.onclick = function(){
+    if(draft.floors.length === 0) return;
+    if(draft.floors.length > 1){
+      draft.calibIndex = -1;
+      draft.calibPhase = 'position';
+      draft.step = 3;
+      rerenderWizard();
+    } else { saveDraft(); }
+  };
+  actions.appendChild(back); actions.appendChild(next);
+  modal.appendChild(actions);
+}
+
+var calibDrag = null;
+var compareGridContainer = null;
+var gridOriginX = 0, gridOriginY = 0, gridFitScale = 1;
+
+function floorTileEl(floor, originX, originY, fitScale){
+  var el = document.createElement('div');
+  var s = (floor.scale || 1) * fitScale;
+  el.style.cssText = 'position:absolute; left:'+((floor.offX-originX)*fitScale)+'px; top:'+((floor.offY-originY)*fitScale)+'px; width:'+(480*s)+'px; height:'+(300*s)+'px; border-radius:4px; overflow:hidden;';
+  if(floor.img){
+    var img = document.createElement('img');
+    img.src = floor.img; img.style.cssText='width:100%; height:100%; object-fit:cover; pointer-events:none;';
+    el.appendChild(img);
+  } else {
+    el.style.background = '#20242c';
+    el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
+    el.style.color='var(--text-dim)'; el.style.fontSize='11px';
+    el.textContent = floor.name;
+  }
+  return el;
+}
+
+function computeGridFit(){
+  var floors = draft.floors;
+  var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  floors.forEach(function(f){
+    var s = f.scale || 1;
+    minX = Math.min(minX, f.offX);
+    minY = Math.min(minY, f.offY);
+    maxX = Math.max(maxX, f.offX + 480*s);
+    maxY = Math.max(maxY, f.offY + 300*s);
+  });
+  var boxW = Math.max(1, maxX-minX), boxH = Math.max(1, maxY-minY);
+  gridFitScale = Math.min(480/boxW, 300/boxH) * 0.92;
+  var scaledW = boxW*gridFitScale, scaledH = boxH*gridFitScale;
+  var padX = (480-scaledW)/2, padY = (300-scaledH)/2;
+  gridOriginX = minX - padX/gridFitScale;
+  gridOriginY = minY - padY/gridFitScale;
+}
+
+function buildCompareGrid(){
+  if(!compareGridContainer) return;
+  compareGridContainer.innerHTML = '';
+  draft.floors.forEach(function(f){
+    var tile = document.createElement('div');
+    tile.style.cssText = 'position:relative; width:100%; aspect-ratio:16/10; background:#0c0e12; border:1px solid var(--line); border-radius:6px; overflow:hidden;';
+    tile.appendChild(floorTileEl(f, gridOriginX, gridOriginY, gridFitScale));
+    var label = document.createElement('div');
+    label.textContent = f.name + (f.id === draft.anchorId ? ' ★' : '');
+    label.style.cssText = 'position:absolute; top:4px; left:6px; font-size:11px; color:var(--text); background:rgba(12,14,18,.7); padding:1px 6px; border-radius:4px;';
+    tile.appendChild(label);
+    compareGridContainer.appendChild(tile);
+  });
+}
+
+function refreshCompareGrid(){
+  if(draft.showCompareGrid) buildCompareGrid();
+}
+
+function recomputeAllFromAnchor(){
+  var anchor = draft.floors.find(function(f){ return f.id === draft.anchorId; }) || draft.floors[0];
+  draft.floors.forEach(function(f){
+    if(f.id === anchor.id) return;
+    if(f.relOffX === undefined) f.relOffX = 0;
+    if(f.relOffY === undefined) f.relOffY = 0;
+    if(f.relScale === undefined) f.relScale = 1;
+    f.offX = anchor.offX + f.relOffX;
+    f.offY = anchor.offY + f.relOffY;
+    f.scale = anchor.scale * f.relScale;
+  });
+}
+
+function renderStep3(modal){
+  modal.innerHTML = '';
+  if(!draft.calibPhase) draft.calibPhase = 'position';
+  if(draft.calibIndex === undefined) draft.calibIndex = -1;
+  var phase = draft.calibPhase;
+  var targets = calibTargets();
+  var anchor = draft.floors.find(function(f){ return f.id === draft.anchorId; });
+  var isAnchorStep = draft.calibIndex === -1;
+  var below = isAnchorStep ? null : anchor;
+  var above = isAnchorStep ? anchor : targets[draft.calibIndex];
+
+  recomputeAllFromAnchor();
+  if(above.scale === undefined) above.scale = 1;
+
+  var h = document.createElement('h3');
+  if(isAnchorStep) h.textContent = '3-0. 기준층(★) 위치/배율';
+  else h.textContent = phase === 'position' ? '3-1. 이미지 정렬 (위치)' : '3-2. 배율 조정 (크기)';
+  var note = document.createElement('div'); note.className='step-note';
+  if(isAnchorStep){
+    note.textContent = above.name + '은(는) 전체 좌표의 기준층이오. 드래그로 위치를, 휠로 배율을 자유롭게 조정할 수 있고, 조정하면 다른 모든 층이 함께 따라 움직이오 — 전체가 제대로 물려있는지 확인하는 용도로도 쓰시오.';
+  } else {
+    note.textContent = phase === 'position'
+      ? '이 층을 드래그해서 기준층(★, 흐리게 표시)과 같은 물리적 지점(계단, 벽 모서리 등)이 겹치도록 위치만 맞추시오. 배율은 다음 단계에서 조정하오.'
+      : '마우스 휠로 크기를, 드래그로 위치를 함께 미세 조정하시오. 기준층과 비교하며 맞추면 되오.';
+  }
+  modal.appendChild(h); modal.appendChild(note);
+
+  var tip = document.createElement('div'); tip.className='calib-tip';
+  if(isAnchorStep){
+    tip.textContent = above.name + ' (기준층) 조정 중' + (phase==='scale' ? ' · 스케일 ' + Math.round(above.scale*100) + '%' : '');
+  } else {
+    tip.textContent = below.name + '(★) 기준으로 ' + above.name + ' 을(를) 맞추는 중 (' + (draft.calibIndex+1) + '/' + targets.length + ')'
+      + (phase === 'scale' ? ' · 스케일 ' + Math.round(above.scale*100) + '%' : '');
+  }
+  modal.appendChild(tip);
+
+  var stage = document.createElement('div');
+  stage.className = 'calib-stage';
+  if(below){
+    var belowEl = floorImgEl(below, false); belowEl.style.opacity='.4';
+    stage.appendChild(belowEl);
+  }
+  var aboveEl = floorImgEl(above, false);
+  aboveEl.style.outline = '2px dashed var(--accent)';
+  aboveEl.style.cursor = 'move';
+
+  aboveEl.onmousedown = function(e){
+    calibDrag = {sx:e.clientX, sy:e.clientY, ox:above.offX, oy:above.offY};
+  };
+  document.onmousemove = function(e){
+    if(!calibDrag) return;
+    above.offX = Math.round(calibDrag.ox + (e.clientX - calibDrag.sx));
+    above.offY = Math.round(calibDrag.oy + (e.clientY - calibDrag.sy));
+    if(!isAnchorStep){ above.relOffX = above.offX - anchor.offX; above.relOffY = above.offY - anchor.offY; }
+    recomputeAllFromAnchor();
+    aboveEl.style.left = above.offX+'px'; aboveEl.style.top = above.offY+'px';
+    refreshCompareGrid();
+  };
+  document.onmouseup = function(){ calibDrag = null; };
+
+  if(phase === 'scale' || isAnchorStep){
+    stage.onwheel = function(e){
+      e.preventDefault();
+      var rect = stage.getBoundingClientRect();
+      var cursorX = e.clientX - rect.left, cursorY = e.clientY - rect.top;
+      var localX = (cursorX - above.offX) / above.scale;
+      var localY = (cursorY - above.offY) / above.scale;
+      var factor = e.deltaY < 0 ? 1.08 : (1/1.08);
+      above.scale = Math.max(0.3, Math.min(3, above.scale * factor));
+      above.offX = Math.round(cursorX - localX * above.scale);
+      above.offY = Math.round(cursorY - localY * above.scale);
+      if(!isAnchorStep){
+        above.relOffX = above.offX - anchor.offX;
+        above.relOffY = above.offY - anchor.offY;
+        above.relScale = above.scale / anchor.scale;
+      }
+      recomputeAllFromAnchor();
+      aboveEl.style.left = above.offX+'px'; aboveEl.style.top = above.offY+'px';
+      aboveEl.style.width = (480*above.scale)+'px'; aboveEl.style.height = (300*above.scale)+'px';
+      tip.textContent = isAnchorStep
+        ? above.name + ' (기준층) 조정 중 · 스케일 ' + Math.round(above.scale*100) + '%'
+        : below.name + '(★) 기준으로 ' + above.name + ' 을(를) 맞추는 중 (' + (draft.calibIndex+1) + '/' + targets.length + ') · 스케일 ' + Math.round(above.scale*100) + '%';
+      refreshCompareGrid();
+    };
+  }
+
+  stage.appendChild(aboveEl);
+  modal.appendChild(stage);
+
+  var gridToggleBtn = document.createElement('button');
+  gridToggleBtn.className = 'btn'; gridToggleBtn.style.fontSize='12px'; gridToggleBtn.style.marginTop='8px';
+  gridToggleBtn.textContent = draft.showCompareGrid ? '⊞ 전체 층 확인 닫기' : '⊞ 전체 층 한번에 확인';
+  gridToggleBtn.onclick = function(){ draft.showCompareGrid = !draft.showCompareGrid; renderStep3(modal); };
+  modal.appendChild(gridToggleBtn);
+
+  if(draft.showCompareGrid){
+    var gridRefitBtn = document.createElement('button');
+    gridRefitBtn.className = 'btn ghost'; gridRefitBtn.style.fontSize='12px'; gridRefitBtn.style.marginTop='8px'; gridRefitBtn.style.marginLeft='6px';
+    gridRefitBtn.textContent = '↻ 격자 화면 재조정';
+    gridRefitBtn.title = '층이 화면 밖으로 벗어났을 때 다시 한 화면에 맞춤';
+    gridRefitBtn.onclick = function(){ computeGridFit(); buildCompareGrid(); };
+    modal.appendChild(gridRefitBtn);
+  }
+
+  compareGridContainer = null;
+  if(draft.showCompareGrid){
+    var gnote = document.createElement('div');
+    gnote.style.cssText = 'font-size:11px; color:var(--text-dim); margin:6px 0;';
+    gnote.textContent = '등록된 모든 층을 같은 좌표로 잘라서 나란히 보여주오. ★ 표시가 기준층이오. 기준층을 조정하면 전체가, 다른 층을 조정하면 그 층만 실시간으로 움직이오. 화면 기준은 이 화면을 열 때 한 번 고정되니, 크게 어긋나면 "격자 화면 재조정"을 눌러주시오.';
+    modal.appendChild(gnote);
+    compareGridContainer = document.createElement('div');
+    compareGridContainer.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:8px;';
+    modal.appendChild(compareGridContainer);
+    computeGridFit();
+    buildCompareGrid();
+  }
+
+  var resetBtn = document.createElement('button');
+  resetBtn.className = 'btn ghost'; resetBtn.style.fontSize='12px'; resetBtn.style.marginTop='8px';
+  resetBtn.textContent = isAnchorStep ? '기준층 위치/배율 초기화' : '이 층 위치/크기 초기화';
+  resetBtn.onclick = function(){
+    if(isAnchorStep){ above.offX=0; above.offY=0; above.scale=1; }
+    else { above.relOffX = 0; above.relOffY = 0; above.relScale = 1; }
+    recomputeAllFromAnchor();
+    renderStep3(modal);
+  };
+  modal.appendChild(resetBtn);
+
+  var actions = document.createElement('div'); actions.className='modal-actions';
+  var back = document.createElement('button'); back.className='btn ghost'; back.textContent='이전';
+  var next = document.createElement('button'); next.className='btn primary';
+
+  if(isAnchorStep){
+    back.onclick = function(){ draft.step = 2; rerenderWizard(); };
+    next.textContent = '다음: 층 맞추기';
+    next.onclick = function(){ draft.calibIndex = 0; draft.calibPhase = 'position'; rerenderWizard(); };
+  } else if(phase === 'position'){
+    back.onclick = function(){
+      if(draft.calibIndex > 0){ draft.calibIndex--; draft.calibPhase = 'scale'; rerenderWizard(); }
+      else { draft.calibIndex = -1; rerenderWizard(); }
+    };
+    next.textContent = '다음: 배율 조정';
+    next.onclick = function(){ draft.calibPhase = 'scale'; rerenderWizard(); };
+  } else {
+    back.textContent = '이전: 위치 조정';
+    back.onclick = function(){ draft.calibPhase = 'position'; rerenderWizard(); };
+    next.textContent = draft.calibIndex < targets.length-1 ? '다음 층' : '완료 · 맵 저장';
+    next.onclick = function(){
+      if(draft.calibIndex < targets.length-1){ draft.calibIndex++; draft.calibPhase = 'position'; rerenderWizard(); }
+      else { saveDraft(); }
+    };
+  }
+  actions.appendChild(back); actions.appendChild(next);
+  modal.appendChild(actions);
+}
+
+function saveDraft(){
+  var map = { id:uid(), name:draft.name, floors:draft.floors, markers:[] };
+  state.maps.push(map);
+  document.onmousemove = null; document.onmouseup = null;
+  draft = null;
+  state.selectedMapId = map.id;
+  state.activeFloor = map.floors[0].id;
+  state.floorA = map.floors[0].id;
+  state.floorB = map.floors.length > 1 ? map.floors[1].id : map.floors[0].id;
+  resetViewports();
+  state.view = 'viewer';
+  pushMapsToStorage();
+  render();
+}
+
+/* ---------- INIT ---------- */
+render();
+pullMapsFromStorage(true);
+if(sharedAvailable){
+  setInterval(function(){
+    if(state.view === 'select') pullMapsFromStorage(true);
+  }, 5000);
+}
+</script>
+</body>
+</html>
