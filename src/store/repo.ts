@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import type { GameMap, Id } from '../model';
 import { readMap, writeMap } from './mapDoc';
-import { deleteImages, listImageIds } from './imageStore';
+import { closeImageDb, deleteImages, IMAGE_DB, listImageIds } from './imageStore';
 
 export interface ShareInfo {
   /** 방 암호(링크에 포함). */
@@ -24,7 +24,19 @@ interface OpenDoc {
   persist: IndexeddbPersistence;
 }
 
-const docName = (id: Id) => `mapops-map:${id}`;
+const INDEX_DB = 'mapops-index';
+const MAP_DB_PREFIX = 'mapops-map:';
+const docName = (id: Id) => `${MAP_DB_PREFIX}${id}`;
+
+function deleteDatabase(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    // 다른 탭이 열고 있으면 그 탭이 닫힐 때까지 보류된다 — 기다리지 않고 진행(다음 로드 전에 처리됨)
+    req.onblocked = () => resolve();
+  });
+}
 
 export class Repo {
   private indexDoc = new Y.Doc();
@@ -36,11 +48,13 @@ export class Repo {
   private pending: Id[] = [];
   private listeners = new Set<() => void>();
   private initPromise: Promise<void> | null = null;
+  private indexPersist: IndexeddbPersistence | null = null;
 
   /** 처음 한 번 인덱스와 모든 맵 문서를 불러온다. */
   init(): Promise<void> {
     this.initPromise ??= (async () => {
-      const p = new IndexeddbPersistence('mapops-index', this.indexDoc);
+      const p = new IndexeddbPersistence(INDEX_DB, this.indexDoc);
+      this.indexPersist = p;
       await p.whenSynced;
       await Promise.all(Array.from(this.index.keys()).map((id) => this.openDoc(id)));
       this.index.observe(() => this.rebuild());
@@ -125,12 +139,43 @@ export class Repo {
     await this.collectGarbageImages();
   }
 
-  /** 어떤 맵도 참조하지 않는 이미지를 지운다(맵 삭제, 마법사 취소 후). */
-  async collectGarbageImages() {
+  /** 어떤 맵도 참조하지 않는 이미지를 지운다(맵 삭제, 마법사 취소 후). 지운 개수를 돌려준다. */
+  async collectGarbageImages(): Promise<number> {
     const used = new Set<string>();
     for (const m of this.cache.values()) for (const f of m.floors) used.add(f.imageId);
     const all = await listImageIds();
-    await deleteImages(all.filter((id) => !used.has(id)));
+    const unused = all.filter((id) => !used.has(id));
+    await deleteImages(unused);
+    return unused.length;
+  }
+
+  /** 맵 문서(마커·낙서·정렬 등)의 대략적 크기(바이트). 이미지는 제외. */
+  docBytes(id: Id): number {
+    const open = this.docs.get(id);
+    return open ? Y.encodeStateAsUpdate(open.doc).byteLength : 0;
+  }
+
+  /**
+   * 이 브라우저의 MAP OPS 데이터를 모두 지운다(맵·이미지·목록).
+   * 연결을 닫은 뒤 데이터베이스를 삭제하므로, 호출 후에는 페이지를 새로 불러와야 한다.
+   */
+  async wipeAll(): Promise<void> {
+    const names = new Set<string>([INDEX_DB, IMAGE_DB, ...Array.from(this.docs.keys()).map(docName)]);
+    for (const { doc, persist } of this.docs.values()) {
+      await persist.destroy();
+      doc.destroy();
+    }
+    this.docs.clear();
+    this.cache.clear();
+    await this.indexPersist?.destroy();
+    await closeImageDb();
+    // 열지 못한(손상·이전 버전) 데이터베이스까지 찾아서 지운다
+    if (typeof indexedDB.databases === 'function') {
+      for (const info of await indexedDB.databases()) {
+        if (info.name && (info.name === INDEX_DB || info.name === IMAGE_DB || info.name.startsWith(MAP_DB_PREFIX))) names.add(info.name);
+      }
+    }
+    await Promise.all(Array.from(names).map(deleteDatabase));
   }
 
   private async openDoc(id: Id): Promise<OpenDoc> {

@@ -117,6 +117,12 @@ class ShareManager {
     });
   }
 
+  /** 모든 세션 종료(전체 데이터 삭제 전). */
+  closeAll() {
+    for (const id of [...this.sessions.keys()]) this.close(id);
+    this.emit();
+  }
+
   start(mapId: Id): string {
     const share = repo.getShare(mapId) ?? { secret: newSecret() };
     repo.setShare(mapId, share);

@@ -80,6 +80,19 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [showDrawings, setShowDrawings] = useState(loadShowDrawings);
   const [confirmClear, setConfirmClear] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem('mapops.sidebar') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const toggleSidebar = () => {
+    setSidebarOpen((v) => {
+      savePref('mapops.sidebar', !v);
+      return !v;
+    });
+  };
   const [liveStyle, setLiveStyle] = useState<MarkerStyle>(map.markerStyle ?? DEFAULT_MARKER_STYLE);
   /** 이 기기에서 그린 획(되돌리기용, 최근 것이 끝). */
   const myStrokes = useRef<Id[]>([]);
@@ -390,6 +403,11 @@ export function ViewerView({ map, onEditMap }: Props) {
         <button className="btn small ghost" onClick={onEditMap}>
           맵 편집
         </button>
+        {!split && (
+          <button className="btn small ghost" onClick={toggleSidebar} aria-pressed={sidebarOpen} title="오른쪽 마커 목록 보이기/숨기기">
+            {sidebarOpen ? '목록 숨기기 ▸' : '◂ 마커 목록'}
+          </button>
+        )}
         <button className={`btn small ${shareState.shared ? 'sharing' : ''}`} onClick={() => setShareOpen((v) => !v)} aria-expanded={shareOpen}>
           {shareState.shared ? `공유 중 · ${shareState.peers.length}명` : '공유'}
         </button>
@@ -506,7 +524,7 @@ export function ViewerView({ map, onEditMap }: Props) {
           )}
         </div>
 
-        {!split && (
+        {!split && sidebarOpen && (
           <Sidebar
             map={shownMap}
             floorId={curFloor}

@@ -12,12 +12,29 @@ export interface StoredImage {
   h: number;
 }
 
+export const IMAGE_DB = 'mapops-images';
 const STORE = 'images';
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function db() {
-  dbPromise ??= openDb('mapops-images', 1, (d) => d.createObjectStore(STORE, { keyPath: 'id' }));
+  dbPromise ??= openDb(IMAGE_DB, 1, (d) => d.createObjectStore(STORE, { keyPath: 'id' }));
   return dbPromise;
+}
+
+/** 연결을 닫는다(전체 삭제 전). */
+export async function closeImageDb() {
+  const p = dbPromise;
+  dbPromise = null;
+  if (p) (await p).close();
+  for (const url of urlCache.values()) void url.then((u) => u && URL.revokeObjectURL(u));
+  urlCache.clear();
+}
+
+/** 이미지별 저장 크기(바이트). */
+export async function imageSizes(): Promise<Map<string, number>> {
+  const tx = (await db()).transaction(STORE, 'readonly');
+  const all = (await promisify(tx.objectStore(STORE).getAll())) as StoredImage[];
+  return new Map(all.map((r) => [r.id, r.blob.size]));
 }
 
 export async function hashBytes(buf: ArrayBuffer): Promise<string> {

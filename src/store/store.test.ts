@@ -137,6 +137,26 @@ describe('.mapops 파일', () => {
   });
 });
 
+describe('Repo 전체 삭제', () => {
+  it('wipeAll 후 새로 열면 맵과 데이터베이스가 모두 없다', async () => {
+    const r1 = new Repo();
+    await r1.init();
+    await r1.createMap(sample('wipe-1'));
+    await r1.createMap(sample('wipe-2'));
+    await new Promise((res) => setTimeout(res, 50));
+    expect(r1.docBytes('wipe-1')).toBeGreaterThan(0);
+
+    await r1.wipeAll();
+    const left = (await indexedDB.databases()).map((d) => d.name).filter((n) => n?.startsWith('mapops'));
+    expect(left).toEqual([]);
+
+    const r2 = new Repo();
+    await r2.init();
+    expect(r2.getSnapshot()).toEqual([]);
+    expect(r2.getMap('wipe-1')).toBeUndefined();
+  });
+});
+
 describe('Repo (IndexedDB)', () => {
   it('저장 후 새 인스턴스로 다시 열어도 남아 있고, 삭제하면 사라진다', async () => {
     const r1 = new Repo();

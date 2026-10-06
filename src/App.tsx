@@ -6,12 +6,14 @@ import { repo } from './store/repo';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { useMaps } from './ui/hooks';
 import { SelectView } from './ui/SelectView';
+import { StorageView } from './ui/StorageView';
 import { ViewerView } from './viewer/ViewerView';
 import { emptyDraft } from './wizard/draft';
 import { WizardView } from './wizard/WizardView';
 
 type Route =
   | { view: 'select' }
+  | { view: 'storage' }
   | { view: 'viewer'; mapId: string }
   | { view: 'wizard'; mode: 'create'; initial: GameMap }
   | { view: 'wizard'; mode: 'edit'; initial: GameMap };
@@ -105,13 +107,19 @@ export function App() {
               ✕ 마법사 나가기
             </button>
           )}
+          {route.view === 'select' && ready && (
+            <button className="btn ghost" onClick={() => setRoute({ view: 'storage' })}>
+              ⚙ 데이터 관리
+            </button>
+          )}
           <div className={`sync-state ${shareState.status}`} role="status">
             <span className="dot" />
             {syncText}
           </div>
         </div>
       </header>
-      <main className={`app ${route.view === 'wizard' ? 'wide' : ''}`}>
+      <main className={`app ${route.view === 'wizard' ? 'wide' : ''} ${route.view === 'viewer' ? 'full' : ''}`}>
+        {ready && route.view === 'storage' && <StorageView onBack={toSelect} />}
         {error && <div className="notice error">저장소를 열지 못했소: {error}</div>}
         {!ready && !error && <p className="dim">불러오는 중…</p>}
         {ready && route.view === 'select' && (

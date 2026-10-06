@@ -18,11 +18,13 @@ body {
   color: var(--text);
   font-family: -apple-system, 'Segoe UI', Pretendard, sans-serif;
 }
+:root { --topbar-h: 52px; }
 .topbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 24px;
+  height: var(--topbar-h);
+  padding: 0 24px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -256,7 +258,43 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .remote-cross .who { position: absolute; left: 10px; top: 6px; font-size: 10px; color: #0c0e12; background: var(--rc); padding: 0 5px; border-radius: 3px; white-space: nowrap; }
 .pending-note { margin-top: 12px; }
 
+/* 사용 화면은 창 전체(폭 제한 없음, 지도가 남은 높이를 모두 채움) */
+.app.full { max-width: none; height: calc(100vh - var(--topbar-h)); height: calc(100dvh - var(--topbar-h)); padding: 10px 14px; display: flex; flex-direction: column; }
+.app.full .viewer { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app.full .viewer-toolbar { margin-bottom: 8px; }
+.app.full .viewer-body { flex: 1; min-height: 0; align-items: stretch; }
+.app.full .stage-wrap { display: flex; flex-direction: column; min-height: 0; }
+.app.full .panels { flex: 1; min-height: 0; }
+.app.full .panel-col { min-height: 0; }
+.app.full .view-stage { flex: 1; height: auto; min-height: 240px; }
+
+/* 데이터 관리 */
+.storage-view { display: flex; flex-direction: column; gap: 14px; }
+.storage-view .section-head { margin-bottom: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.card h3 { margin: 0 0 10px; font-size: 14px; }
+.card .big { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+.badge { display: inline-block; font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--panel2); color: var(--text-dim); }
+.badge.ok { background: rgba(79, 191, 131, 0.12); color: var(--ok); }
+.badge.small { font-size: 10px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.data-table td { padding: 8px; border-bottom: 1px solid var(--line); }
+.data-table td.actions { text-align: right; white-space: nowrap; }
+.data-table td.actions .btn + .btn { margin-left: 4px; }
+.cleanup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.cleanup-row:last-child { border-bottom: none; }
+.danger-zone { border-color: rgba(224, 85, 90, 0.5); }
+.wipe-confirm { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.wipe-confirm label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); }
+@media (max-width: 700px) {
+  .data-table th:nth-child(n + 2):nth-child(-n + 6), .data-table td:nth-child(n + 2):nth-child(-n + 6) { display: none; }
+}
+.app.full .sidebar { max-height: none; overflow: auto; }
+
 @media (max-width: 860px) {
+  .app.full { height: auto; }
+  .app.full .view-stage { flex: none; height: 65vh; }
   .viewer-body { flex-direction: column; }
   .sidebar { width: 100%; max-height: none; }
   .panels.split { flex-direction: column; }
