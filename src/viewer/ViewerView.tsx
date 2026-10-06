@@ -13,7 +13,7 @@ import { DrawToolbar } from './DrawToolbar';
 import { MarkerForm } from './MarkerForm';
 import { addMarker, deleteMarker, moveMarker, updateMarker, type MarkerInput } from './markerOps';
 import { MarkerStylePanel } from './MarkerStylePanel';
-import { Panel, type Painter, type PanelShared, type PenSettings, type Tool } from './Panel';
+import { Panel, type Painter, type PanelKey, type PanelShared, type PenSettings, type Tool } from './Panel';
 import { Sidebar } from './Sidebar';
 
 /* ---------- 기기별 그리기 설정 ---------- */
@@ -124,8 +124,11 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   // 마우스 이동은 매우 잦으므로 화면 갱신 주기(rAF)에 한 번만 커서 가이드를 다시 그린다
   const cursorFrame = useRef(0);
-  const onCursor = useCallback((w: Vec | null) => {
+  /** 커서가 올라가 있는 지점과 그 패널의 층(M 단축키로 그 자리에 마커 추가). */
+  const cursorAt = useRef<{ w: Vec; floorId: Id } | null>(null);
+  const onCursor = useCallback((w: Vec | null, floorId: Id) => {
     cursor.current = w;
+    cursorAt.current = w ? { w, floorId } : null;
     if (cursorFrame.current) return;
     cursorFrame.current = requestAnimationFrame(() => {
       cursorFrame.current = 0;
@@ -281,16 +284,45 @@ export function ViewerView({ map, onEditMap }: Props) {
   useEffect(() => shareManager.setProbe(map.id, probe), [map.id, probe, inSession]);
   useEffect(() => () => shareManager.setProbe(map.id, null), [map.id]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof Element && e.target.closest('input, textarea, form')) return;
-      if (tool !== 'view' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        undo();
-        return;
-      }
-      if (e.key !== 'Escape') return;
-      if (tool !== 'view') setTool('view');
+  /* ---------- 단축키 ---------- */
+  const [activePanel, setActivePanel] = useState<'A' | 'B'>('A');
+  const onActivate = useCallback((k: PanelKey) => {
+    if (k === 'A' || k === 'B') setActivePanel(k);
+  }, []);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (text: string) => {
+    setToast(text);
+    window.setTimeout(() => setToast((t) => (t === text ? null : t)), 1800);
+  };
+  /** E를 누르고 있는 동안만 지우개(떼면 펜으로). */
+  const tempEraser = useRef(false);
+
+  /** M: 커서가 지도 위에 있으면 그 자리, 아니면 클릭해 둔 위치에 마커 추가 창. */
+  const addMarkerHere = () => {
+    const at = cursorAt.current ?? (probe ? { w: probe.w, floorId: probe.floorId } : null);
+    if (!at) return showToast('지도 위에 마우스를 올리거나 위치를 클릭한 뒤 M을 누르시오.');
+    if (tool !== 'view') setTool('view');
+    setMoving(null);
+    setSelectedMarker(null);
+    setProbe(at);
+    setForm({ mode: 'add', w: at.w, floorId: split ? at.floorId : curFloor });
+  };
+
+  // 매 렌더의 최신 상태로 처리하도록 참조에 담고, 리스너는 한 번만 단다
+  const keyDown = useRef<(e: KeyboardEvent) => void>(() => {});
+  const keyUp = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyDown.current = (e: KeyboardEvent) => {
+    if (e.target instanceof Element && e.target.closest('input, textarea, select, form, [contenteditable]')) return;
+    if (document.querySelector('.overlay')) return; // 확인 창이 떠 있으면 무시
+    if (tool !== 'view' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if (e.key === 'Escape' || e.code === 'Escape') {
+      if (helpOpen) setHelpOpen(false);
+      else if (tool !== 'view') setTool('view');
       else if (moving) setMoving(null);
       else if (form) setForm(null);
       else if (settingsOpen) setSettingsOpen(false);
@@ -298,10 +330,59 @@ export function ViewerView({ map, onEditMap }: Props) {
         setProbe(null);
         setSelectedMarker(null);
       }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // 한/영 상태와 무관하게 키 위치(e.code)로 판별
+    const code = e.code;
+    if (code === 'Slash' && e.shiftKey) {
+      setHelpOpen((v) => !v);
+      return;
+    }
+    if (code === 'KeyE') {
+      if (!e.repeat && tool === 'pen') {
+        tempEraser.current = true;
+        setTool('eraser');
+      }
+      return;
+    }
+    if (e.repeat) return;
+    if (code === 'KeyD') return changeTool(tool === 'view' ? 'pen' : 'view');
+    if (code === 'KeyM') return addMarkerHere();
+    if (code === 'KeyQ') {
+      if (map.floors.length < 2) return showToast('층이 2개 이상일 때만 2단 비교를 쓸 수 있소.');
+      setSplit((s) => !s);
+      return;
+    }
+    const digit = /^(Digit|Numpad)([1-9])$/.exec(code);
+    if (digit) {
+      const f = map.floors[Number(digit[2]) - 1];
+      if (!f) return;
+      if (!split) setActiveFloor(f.id);
+      else if (activePanel === 'B') setFloorB(f.id);
+      else setFloorA(f.id);
+    }
+  };
+  keyUp.current = (e: KeyboardEvent) => {
+    if (e.code === 'KeyE' && tempEraser.current) {
+      tempEraser.current = false;
+      setTool((t) => (t === 'eraser' ? 'pen' : t));
+    }
+  };
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => keyDown.current(e);
+    const up = (e: KeyboardEvent) => keyUp.current(e);
+    // 창이 포커스를 잃으면(E를 누른 채 다른 창으로) 임시 지우개를 되돌린다
+    const blur = () => keyUp.current(new KeyboardEvent('keyup', { code: 'KeyE' }));
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [moving, form, settingsOpen, tool, undo]);
+  }, []);
 
   /* ---------- 마커 저장 ---------- */
   const submitForm = (input: MarkerInput) => {
@@ -360,6 +441,7 @@ export function ViewerView({ map, onEditMap }: Props) {
     onStrokeDone,
     onEraseStroke,
     onCursor,
+    onActivate,
     guide,
     selectedMarkerId: selectedMarker,
     registerPainter,
@@ -393,8 +475,16 @@ export function ViewerView({ map, onEditMap }: Props) {
         <h2 className="map-title">{map.name}</h2>
         {!split && (
           <div className="floor-tabs" role="tablist" aria-label="층">
-            {map.floors.map((f) => (
-              <button key={f.id} role="tab" aria-selected={f.id === curFloor} className={`floor-tab ${f.id === curFloor ? 'active' : ''}`} onClick={() => setActiveFloor(f.id)}>
+            {map.floors.map((f, i) => (
+              <button
+                key={f.id}
+                role="tab"
+                aria-selected={f.id === curFloor}
+                className={`floor-tab ${f.id === curFloor ? 'active' : ''}`}
+                onClick={() => setActiveFloor(f.id)}
+                title={i < 9 ? `단축키 ${i + 1}` : undefined}
+              >
+                {i < 9 && <span className="key-hint">{i + 1}</span>}
                 {f.name}
                 {f.id === map.anchorFloorId && <span className="anchor-mark" title="기준층"> ★</span>}
               </button>
@@ -412,14 +502,19 @@ export function ViewerView({ map, onEditMap }: Props) {
           <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
           마커 이름
         </label>
-        <button className={`btn small ${split ? 'primary' : ''}`} onClick={() => setSplit((s) => !s)} disabled={map.floors.length < 2 && !split}>
-          {split ? '단일 보기로' : '2단 비교'}
+        <button className={`btn small ${split ? 'primary' : ''}`} onClick={() => setSplit((s) => !s)} disabled={map.floors.length < 2 && !split} title="단축키 Q">
+          {split ? '단일 보기로' : '2단 비교'} <kbd>Q</kbd>
         </button>
         <button className="btn small" onClick={fit} title="확대/이동 초기화">
           ⤾ 보기 리셋
         </button>
-        <button className={`btn small ${tool !== 'view' ? 'primary' : ''}`} onClick={() => changeTool(tool === 'view' ? 'pen' : 'view')} aria-pressed={tool !== 'view'}>
-          ✏ 그리기
+        <button
+          className={`btn small ${tool !== 'view' ? 'primary' : ''}`}
+          onClick={() => changeTool(tool === 'view' ? 'pen' : 'view')}
+          aria-pressed={tool !== 'view'}
+          title="단축키 D"
+        >
+          ✏ 그리기 <kbd>D</kbd>
         </button>
         <button className="btn small" onClick={() => setStyleOpen((v) => !v)} aria-expanded={styleOpen}>
           마커 모양
@@ -445,7 +540,44 @@ export function ViewerView({ map, onEditMap }: Props) {
             {inSession ? '세션 공유 중' : '세션 제외'}
           </span>
         )}
+        <button className="icon-btn" onClick={() => setHelpOpen((v) => !v)} aria-expanded={helpOpen} title="단축키 보기 (?)" aria-label="단축키 보기">
+          ⌨
+        </button>
       </div>
+      {helpOpen && (
+        <div className="popover help-pop" role="dialog" aria-label="단축키">
+          <div className="form-head">
+            <div className="form-title">단축키</div>
+            <button className="icon-btn" onClick={() => setHelpOpen(false)} aria-label="닫기">
+              ✕
+            </button>
+          </div>
+          <dl className="key-list">
+            <dt><kbd>D</kbd></dt>
+            <dd>그리기 모드 켜기/끄기 (켜면 펜)</dd>
+            <dt><kbd>E</kbd> 누른 채 클릭·끌기</dt>
+            <dd>그리기 모드에서 지우개 (떼면 펜으로)</dd>
+            <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt>
+            <dd>그리기 되돌리기</dd>
+            <dt><kbd>M</kbd></dt>
+            <dd>마커 추가 (마우스가 있는 자리, 없으면 클릭해 둔 위치)</dd>
+            <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> …</dt>
+            <dd>단일 보기: 그 층으로 · 2단 비교: 최근 마우스를 올린 쪽(파란 테두리) 층 바꾸기</dd>
+            <dt><kbd>Q</kbd></dt>
+            <dd>2단 비교 켜기/끄기</dd>
+            <dt><kbd>Esc</kbd></dt>
+            <dd>그리기 끝 · 창 닫기 · 선택 해제</dd>
+            <dt><kbd>?</kbd></dt>
+            <dd>이 목록</dd>
+          </dl>
+          <p className="hint">한/영 상태와 관계없이 동작하오. 입력란에 글을 쓰는 중에는 동작하지 않소.</p>
+        </div>
+      )}
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
       {settingsOpen && (
         <CursorGuidePanel guide={guide} crosshair={crosshair} onGuide={updateGuide} onCrosshair={updateCrosshair} onClose={() => setSettingsOpen(false)} />
       )}
@@ -482,16 +614,16 @@ export function ViewerView({ map, onEditMap }: Props) {
               <>
                 <div className="panel-col">
                   {floorSelect(curA, setFloorA, '왼쪽')}
-                  <Panel {...panelProps} floor={floorById(curA)} />
+                  <Panel {...panelProps} floor={floorById(curA)} panelKey="A" active={activePanel === 'A'} />
                 </div>
                 <div className="panel-col">
                   {floorSelect(curB, setFloorB, '오른쪽')}
-                  <Panel {...panelProps} floor={floorById(curB)} />
+                  <Panel {...panelProps} floor={floorById(curB)} panelKey="B" active={activePanel === 'B'} />
                 </div>
               </>
             ) : (
               <div className="panel-col">
-                <Panel {...panelProps} floor={floorById(curFloor)} ghost={ghostFloor} />
+                <Panel {...panelProps} floor={floorById(curFloor)} ghost={ghostFloor} panelKey="main" />
               </div>
             )}
           </div>

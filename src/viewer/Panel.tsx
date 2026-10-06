@@ -33,6 +33,7 @@ export interface PanelShared {
 }
 
 export type Tool = 'view' | 'pen' | 'eraser';
+export type PanelKey = 'main' | 'A' | 'B';
 
 export interface PenSettings {
   color: string;
@@ -61,7 +62,13 @@ interface Props {
   onStrokeDone: (floorId: Id, points: Vec[], width: number, color: string) => void;
   onEraseStroke: (id: Id) => void;
   /** 마우스가 이 패널 위에서 움직임(월드 좌표) / 벗어남(null). */
-  onCursor: (w: Vec | null) => void;
+  onCursor: (w: Vec | null, floorId: Id, panelKey: PanelKey) => void;
+  /** 이 패널이 무엇인지(단일 보기 / 2단 왼쪽 / 오른쪽) — 단축키가 "최근 패널"을 고를 때 쓴다. */
+  panelKey: PanelKey;
+  /** 2단 비교에서 단축키 대상인 패널이면 테두리로 표시. */
+  active?: boolean;
+  /** 이 패널에 손을 댐(클릭·마우스 올림). */
+  onActivate?: (panelKey: PanelKey) => void;
   guide: CursorGuideSettings;
   /** 공유 상대의 선택 위치. */
   remoteProbes: RemoteProbe[];
@@ -177,19 +184,31 @@ export const Panel = memo(function Panel(p: Props) {
   useEffect(() => p.registerPainter({ paint, paintCursor }), [p.registerPainter, paint, paintCursor]);
   useLayoutEffect(() => paint());
 
+  /** 패널 크기를 재서 알린다. */
+  const measure = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    latest.current.onResize({ w: el.clientWidth, h: el.clientHeight });
+    paint();
+  }, [paint]);
+  /**
+   * 화면 맞춤이 아직 안 됐으면(백그라운드 탭에서 열려 크기가 0으로 재졌고 ResizeObserver 알림도 못 받은 경우)
+   * 사용자가 손을 대는 순간 다시 잰다.
+   */
+  const ensureView = () => {
+    if (!latest.current.shared.view.current) measure();
+  };
+
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const report = () => {
-      latest.current.onResize({ w: el.clientWidth, h: el.clientHeight });
-      paint();
-    };
+    const report = measure;
     // 첫 측정은 즉시(ResizeObserver는 다음 렌더 프레임까지 늦을 수 있음)
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [paint]);
+  }, [measure]);
 
   const local = (e: { clientX: number; clientY: number }): Vec => {
     const r = stageRef.current!.getBoundingClientRect();
@@ -229,6 +248,8 @@ export const Panel = memo(function Panel(p: Props) {
   const drag = useRef<Drag | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
+    ensureView();
+    p.onActivate?.(p.panelKey);
     const pt = local(e);
     const id = e.pointerId;
     if (e.button === 1 || e.button === 2) {
@@ -262,10 +283,11 @@ export const Panel = memo(function Panel(p: Props) {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    ensureView();
     const pt = local(e);
     const v = latest.current.shared.view.current;
     // 커서 가이드: 드래그 중이든 아니든 커서의 월드 좌표를 알린다(모든 패널이 같은 지점에 표시)
-    if (v && e.pointerType !== 'touch') latest.current.onCursor(screenToWorld(v, pt));
+    if (v && e.pointerType !== 'touch') latest.current.onCursor(screenToWorld(v, pt), latest.current.floor.id, latest.current.panelKey);
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     switch (d.kind) {
@@ -320,10 +342,11 @@ export const Panel = memo(function Panel(p: Props) {
   return (
     <div
       ref={stageRef}
-      className={`view-stage ${drawing ? `drawing tool-${p.tool}` : ''} ${hideCursor ? 'hide-cursor' : ''}`}
+      className={`view-stage ${drawing ? `drawing tool-${p.tool}` : ''} ${hideCursor ? 'hide-cursor' : ''} ${p.active ? 'active-panel' : ''}`}
+      onPointerEnter={() => p.onActivate?.(p.panelKey)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerLeave={() => p.onCursor(null)}
+      onPointerLeave={() => p.onCursor(null, p.floor.id, p.panelKey)}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
         drag.current = null;

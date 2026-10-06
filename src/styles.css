@@ -195,6 +195,18 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .shape-preview { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
 .shape-preview .reticle { position: absolute; left: 50%; top: 50%; filter: none; }
 
+/* 단축키 */
+kbd { display: inline-block; min-width: 16px; padding: 0 4px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); color: var(--text-dim); font-family: inherit; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+.btn kbd { margin-left: 4px; }
+.key-hint { display: inline-block; min-width: 14px; margin-right: 5px; padding: 0 3px; border-radius: 3px; background: var(--bg); color: var(--text-dim); font-size: 10px; line-height: 14px; text-align: center; }
+.floor-tab.active .key-hint { color: var(--accent); }
+.view-stage.active-panel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.popover.help-pop { top: 44px; right: 0; bottom: auto; width: 380px; z-index: 20; display: flex; flex-direction: column; gap: 8px; }
+.key-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 12px; align-items: baseline; }
+.key-list dt { white-space: nowrap; color: var(--text); }
+.key-list dd { margin: 0; color: var(--text-dim); }
+.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; background: rgba(20, 23, 28, 0.95); border: 1px solid var(--warn); color: var(--warn); padding: 8px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
+
 /* 그리기 도구 */
 .draw-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 12px; }
 .draw-toolbar .spacer { flex: 1; }
