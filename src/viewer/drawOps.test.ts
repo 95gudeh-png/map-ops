@@ -2,7 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { vec } from '../geometry';
 import { mergeEditedMap, removeFloor, replaceFloorImage } from '../mapOps';
 import type { GameMap, Stroke } from '../model';
-import { addStroke, clearFloorStrokes, deleteStroke, flatten, hitStroke, simplify, strokePath, strokesOnFloor } from './drawOps';
+import {
+  addStroke,
+  arrowHeadPath,
+  clearFloorStrokes,
+  dashArray,
+  DEFAULT_PEN,
+  deleteStroke,
+  flatten,
+  hitStroke,
+  normalizePen,
+  simplify,
+  strokePath,
+  strokeStyleOf,
+  strokesOnFloor,
+} from './drawOps';
 
 const stroke = (id: string, floorId: string, points: number[], width = 4): Stroke => ({ id, floorId, color: '#fff', width, points, createdAt: 0 });
 
@@ -47,6 +61,33 @@ describe('drawOps', () => {
     expect(hitStroke(ss, vec(20, 3), 2)).toBe('a');
     expect(hitStroke(ss, vec(20, 20), 2)).toBeNull();
     expect(hitStroke([stroke('dot', 'A', [5, 5])], vec(6, 5), 0)).toBe('dot');
+  });
+
+  it('펜 설정 정규화: 이전 형식(색·굵기만)도 기본값을 채운다', () => {
+    expect(normalizePen({ color: '#123456', width: 8 })).toEqual({ color: '#123456', width: 8, opacity: 1, dash: 'solid', arrow: false });
+    expect(normalizePen({ color: 'red', width: 999, opacity: 0, dash: 'x' })).toEqual({ ...DEFAULT_PEN, width: 30, opacity: 0.1 });
+    expect(normalizePen(null)).toEqual(DEFAULT_PEN);
+  });
+
+  it('획 속성은 기본값이면 생략', () => {
+    expect(strokeStyleOf(DEFAULT_PEN)).toEqual({});
+    expect(strokeStyleOf({ ...DEFAULT_PEN, opacity: 0.4, dash: 'dot', arrow: true })).toEqual({ opacity: 0.4, dash: 'dot', arrow: true });
+  });
+
+  it('점선·파선은 굵기에 비례', () => {
+    expect(dashArray('dash', 2)).toBe('6 4');
+    expect(dashArray('dot', 2)).toBe('0.01 4');
+    expect(dashArray(undefined, 2)).toBeUndefined();
+  });
+
+  it('화살촉은 끝 방향을 향하고, 너무 짧으면 없다', () => {
+    const d = arrowHeadPath([0, 0, 100, 0], 2); // 오른쪽으로
+    const nums = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+    expect(nums[0]).toBeGreaterThan(100); // 촉 끝이 선 끝보다 앞
+    expect(nums[2]).toBeLessThan(100); // 날개는 뒤쪽
+    expect(nums[3]).toBeCloseTo(-nums[5]!); // 위아래 대칭
+    expect(arrowHeadPath([5, 5], 2)).toBe('');
+    expect(arrowHeadPath([5, 5, 5, 5], 2)).toBe('');
   });
 
   it('SVG path', () => {

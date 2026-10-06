@@ -7,7 +7,7 @@ interface Props {
   map: GameMap;
   floorId: Id;
   selectedId: Id | null;
-  onHover: (w: Vec | null) => void;
+  onHover: (w: Vec | null, markerId?: Id) => void;
   onSelect: (m: Marker) => void;
   onEdit: (m: Marker) => void;
   onMove: (m: Marker) => void;
@@ -23,7 +23,8 @@ export function Sidebar({ map, floorId, selectedId, onHover, onSelect, onEdit, o
     <li
       key={m.id}
       className={`mk-row ${selectedId === m.id ? 'selected' : ''}`}
-      onPointerEnter={() => onHover(markerWorld(map, m))}
+      onPointerEnter={() => onHover(markerWorld(map, m), m.id)}
+      title="마우스를 올리고 Delete 키로 삭제"
       onPointerLeave={() => onHover(null)}
     >
       <button className="mk-main" onClick={() => onSelect(m)} title="이 위치 선택">

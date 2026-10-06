@@ -87,6 +87,9 @@ function checkStroke(s: unknown, i: number, floorIds: Set<string>) {
   if (!isColor(s.color) || !isNum(s.width) || s.width <= 0 || !isNum(s.createdAt)) fail(`strokes[${i}] 필드`);
   if (!Array.isArray(s.points) || s.points.length < 2 || s.points.length % 2 !== 0 || !s.points.every(isNum))
     fail(`strokes[${i}].points`);
+  if (s.opacity !== undefined && (!isNum(s.opacity) || s.opacity < 0.05 || s.opacity > 1)) fail(`strokes[${i}].opacity`);
+  if (s.dash !== undefined && s.dash !== 'dash' && s.dash !== 'dot') fail(`strokes[${i}].dash`);
+  if (s.arrow !== undefined && typeof s.arrow !== 'boolean') fail(`strokes[${i}].arrow`);
 }
 
 function checkMarkerStyle(st: unknown) {

@@ -2,13 +2,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { fitView, floorWorldRect, panView, zoomViewAt, type Size, type Vec, type View } from '../geometry';
 import { markerWorld } from '../mapOps';
-import { DEFAULT_MARKER_STYLE, newId, type GameMap, type Id, type Marker, type MarkerStyle } from '../model';
+import { DEFAULT_MARKER_STYLE, MARKER_TYPES, newId, type GameMap, type Id, type Marker, type MarkerStyle } from '../model';
 import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
 import { repo } from '../store/repo';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { loadCrosshair, loadCursorGuide, saveCrosshair, saveCursorGuide, type CrosshairSettings, type CursorGuideSettings } from './crosshair';
 import { CursorGuidePanel } from './CursorGuidePanel';
-import { addStroke, clearFloorStrokes, deleteStroke, flatten, PEN_COLORS, PEN_WIDTHS, strokesOnFloor } from './drawOps';
+import {
+  addStroke,
+  clearFloorStrokes,
+  DEFAULT_PEN,
+  DEFAULT_PRESETS,
+  deleteStroke,
+  flatten,
+  normalizePen,
+  strokesOnFloor,
+  strokeStyleOf,
+  type PenPreset,
+} from './drawOps';
 import { DrawToolbar } from './DrawToolbar';
 import { MarkerForm } from './MarkerForm';
 import { addMarker, deleteMarker, moveMarker, updateMarker, type MarkerInput } from './markerOps';
@@ -19,14 +30,28 @@ import { Sidebar } from './Sidebar';
 /* ---------- 기기별 그리기 설정 ---------- */
 const PEN_KEY = 'mapops.pen';
 const SHOW_DRAWINGS_KEY = 'mapops.showDrawings';
+const PRESETS_KEY = 'mapops.penPresets';
 function loadPen(): PenSettings {
   try {
-    const v = JSON.parse(localStorage.getItem(PEN_KEY) ?? 'null') as PenSettings | null;
-    if (v && /^#[0-9a-f]{6}$/i.test(v.color) && PEN_WIDTHS.includes(v.width)) return v;
+    return normalizePen(JSON.parse(localStorage.getItem(PEN_KEY) ?? 'null'));
   } catch {
-    /* 무시 */
+    return DEFAULT_PEN;
   }
-  return { color: PEN_COLORS[0]!, width: PEN_WIDTHS[1]! };
+}
+/** 저장한 펜 목록(처음엔 기본 펜 4개). */
+function loadPresets(): PenPreset[] {
+  try {
+    const raw = localStorage.getItem(PRESETS_KEY);
+    if (!raw) return DEFAULT_PRESETS;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return DEFAULT_PRESETS;
+    return list
+      .filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string')
+      .slice(0, 12)
+      .map((p) => ({ ...normalizePen(p), id: p.id as string, name: String(p.name).slice(0, 20) }));
+  } catch {
+    return DEFAULT_PRESETS;
+  }
 }
 function savePref(key: string, value: unknown) {
   try {
@@ -180,9 +205,12 @@ export function ViewerView({ map, onEditMap }: Props) {
     },
     [paintAll],
   );
+  /** 마우스가 올라가 있는 마커(Delete 키로 삭제). */
+  const hoveredMarker = useRef<Id | null>(null);
   const onHoverMarker = useCallback(
-    (w: Vec | null) => {
+    (w: Vec | null, markerId?: Id) => {
       hover.current = w;
+      hoveredMarker.current = w ? (markerId ?? null) : null;
       paintAll();
     },
     [paintAll],
@@ -206,9 +234,11 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   /* ---------- 그리기 ---------- */
   const onStrokeDone = useCallback(
-    (floorId: Id, points: Vec[], width: number, color: string) => {
+    (floorId: Id, points: Vec[], width: number, pen: PenSettings) => {
       const id = newId();
-      repo.saveMap(addStroke(latestMap(), { id, floorId, color, width, points: flatten(points), createdAt: Date.now() }));
+      repo.saveMap(
+        addStroke(latestMap(), { id, floorId, color: pen.color, width, points: flatten(points), createdAt: Date.now(), ...strokeStyleOf(pen) }),
+      );
       myStrokes.current.push(id);
       setUndoCount(myStrokes.current.length);
     },
@@ -237,9 +267,16 @@ export function ViewerView({ map, onEditMap }: Props) {
       setSettingsOpen(false);
     }
   };
-  const changePen = (p: PenSettings) => {
-    setPen(p);
-    savePref(PEN_KEY, p);
+  const changePen = (patch: Partial<PenSettings>) =>
+    setPen((prev) => {
+      const next = normalizePen({ ...prev, ...patch });
+      savePref(PEN_KEY, next);
+      return next;
+    });
+  const [presets, setPresets] = useState<PenPreset[]>(loadPresets);
+  const updatePresets = (next: PenPreset[]) => {
+    setPresets(next);
+    savePref(PRESETS_KEY, next);
   };
   const changeShowDrawings = (v: boolean) => {
     setShowDrawings(v);
@@ -298,6 +335,33 @@ export function ViewerView({ map, onEditMap }: Props) {
   /** E를 누르고 있는 동안만 지우개(떼면 펜으로). */
   const tempEraser = useRef(false);
 
+  /** Delete로 지운 마지막 마커(잠시 되돌리기 가능). */
+  const [lastDeleted, setLastDeleted] = useState<Marker | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
+  const deleteMarkerNow = (id: Id) => {
+    const m = latestMap().markers.find((x) => x.id === id);
+    if (!m) return;
+    repo.saveMap(deleteMarker(latestMap(), id));
+    hoveredMarker.current = null;
+    onHoverMarker(null);
+    if (selectedMarker === id) setSelectedMarker(null);
+    setLastDeleted(m);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setLastDeleted(null), 6000);
+  };
+  const restoreDeleted = () => {
+    const m = lastDeleted;
+    if (!m) return;
+    const cur = latestMap();
+    // 그사이 층이 지워졌으면 되살릴 수 없다
+    const floors = new Set(cur.floors.map((f) => f.id));
+    const ok = m.scope.kind === 'floor' ? floors.has(m.scope.floorId) : m.scope.floorIds.some((id) => floors.has(id));
+    if (ok && !cur.markers.some((x) => x.id === m.id)) repo.saveMap({ ...cur, markers: [...cur.markers, m] });
+    window.clearTimeout(undoTimer.current);
+    setLastDeleted(null);
+  };
+  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
+
   /** M: 커서가 지도 위에 있으면 그 자리, 아니면 클릭해 둔 위치에 마커 추가 창. */
   const addMarkerHere = () => {
     const at = cursorAt.current ?? (probe ? { w: probe.w, floorId: probe.floorId } : null);
@@ -315,9 +379,22 @@ export function ViewerView({ map, onEditMap }: Props) {
   keyDown.current = (e: KeyboardEvent) => {
     if (e.target instanceof Element && e.target.closest('input, textarea, select, form, [contenteditable]')) return;
     if (document.querySelector('.overlay')) return; // 확인 창이 떠 있으면 무시
-    if (tool !== 'view' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
-      e.preventDefault();
-      undo();
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+      if (tool !== 'view') {
+        e.preventDefault();
+        undo();
+      } else if (lastDeleted) {
+        e.preventDefault();
+        restoreDeleted();
+      }
+      return;
+    }
+    if (e.code === 'Delete' && tool === 'view') {
+      const id = hoveredMarker.current;
+      if (id) {
+        e.preventDefault();
+        deleteMarkerNow(id);
+      } else showToast('지울 마커 위에 마우스를 올린 채 Delete를 누르시오.');
       return;
     }
     if (e.key === 'Escape' || e.code === 'Escape') {
@@ -558,9 +635,11 @@ export function ViewerView({ map, onEditMap }: Props) {
             <dt><kbd>E</kbd> 누른 채 클릭·끌기</dt>
             <dd>그리기 모드에서 지우개 (떼면 펜으로)</dd>
             <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt>
-            <dd>그리기 되돌리기</dd>
+            <dd>그리기 되돌리기 · 방금 지운 마커 되살리기</dd>
             <dt><kbd>M</kbd></dt>
             <dd>마커 추가 (마우스가 있는 자리, 없으면 클릭해 둔 위치)</dd>
+            <dt>마커 위에서 <kbd>Delete</kbd></dt>
+            <dd>그 마커 삭제 (Ctrl+Z 또는 "되돌리기"로 복구)</dd>
             <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> …</dt>
             <dd>단일 보기: 그 층으로 · 2단 비교: 최근 마우스를 올린 쪽(파란 테두리) 층 바꾸기</dd>
             <dt><kbd>Q</kbd></dt>
@@ -578,6 +657,14 @@ export function ViewerView({ map, onEditMap }: Props) {
           {toast}
         </div>
       )}
+      {lastDeleted && (
+        <div className="snackbar" role="status">
+          "{lastDeleted.label || MARKER_TYPES[lastDeleted.type].label}" 마커를 지웠소.
+          <button className="btn small" onClick={restoreDeleted}>
+            되돌리기 <kbd>Ctrl+Z</kbd>
+          </button>
+        </div>
+      )}
       {settingsOpen && (
         <CursorGuidePanel guide={guide} crosshair={crosshair} onGuide={updateGuide} onCrosshair={updateCrosshair} onClose={() => setSettingsOpen(false)} />
       )}
@@ -591,6 +678,8 @@ export function ViewerView({ map, onEditMap }: Props) {
           showDrawings={showDrawings}
           onTool={changeTool}
           onPen={changePen}
+          presets={presets}
+          onPresets={updatePresets}
           onUndo={undo}
           onClearFloor={() => setConfirmClear(true)}
           onShowDrawings={changeShowDrawings}

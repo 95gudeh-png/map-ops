@@ -15,7 +15,7 @@ import { MARKER_TYPES, markerColor, type Floor, type GameMap, type Id, type Mark
 import type { RemoteProbe } from '../share/session';
 import { FloorImg, simToCss } from '../ui/FloorImg';
 import type { CursorGuideSettings } from './crosshair';
-import { hitStroke, simplify, strokePath } from './drawOps';
+import { arrowHeadPath, dashArray, hitStroke, simplify, strokePath, type PenSettings } from './drawOps';
 import { Reticle } from './Reticle';
 
 /** 패널이 등록하는 그리기 함수. paintCursor는 마우스 이동마다 불리므로 커서 가이드만 갱신한다. */
@@ -35,11 +35,7 @@ export interface PanelShared {
 export type Tool = 'view' | 'pen' | 'eraser';
 export type PanelKey = 'main' | 'A' | 'B';
 
-export interface PenSettings {
-  color: string;
-  /** 화면 기준 굵기(px). */
-  width: number;
-}
+export type { PenSettings };
 
 interface Props {
   map: GameMap;
@@ -56,10 +52,11 @@ interface Props {
   onPan: (delta: Vec) => void;
   onZoom: (cursor: Vec, zoomIn: boolean) => void;
   onProbe: (w: Vec, floorId: Id) => void;
-  onHoverMarker: (w: Vec | null) => void;
+  /** 마커에 마우스가 올라감(그 마커와 월드 좌표) / 벗어남(null). */
+  onHoverMarker: (w: Vec | null, markerId?: Id) => void;
   onMarkerClick: (m: Marker, floorId: Id) => void;
   /** 획 완성: 층 로컬 좌표와 층 로컬 굵기. */
-  onStrokeDone: (floorId: Id, points: Vec[], width: number, color: string) => void;
+  onStrokeDone: (floorId: Id, points: Vec[], width: number, pen: PenSettings) => void;
   onEraseStroke: (id: Id) => void;
   /** 마우스가 이 패널 위에서 움직임(월드 좌표) / 벗어남(null). */
   onCursor: (w: Vec | null, floorId: Id, panelKey: PanelKey) => void;
@@ -263,8 +260,14 @@ export const Panel = memo(function Panel(p: Props) {
         drag.current = { kind: 'pen', points: [f.pt], perPx: f.perPx, id };
         const path = livePath.current;
         if (path) {
-          path.setAttribute('stroke', latest.current.pen.color);
-          path.setAttribute('stroke-width', String(latest.current.pen.width * f.perPx));
+          const pen = latest.current.pen;
+          const w = pen.width * f.perPx;
+          path.setAttribute('stroke', pen.color);
+          path.setAttribute('stroke-width', String(w));
+          path.setAttribute('stroke-opacity', String(pen.opacity));
+          const da = dashArray(pen.dash, w);
+          if (da) path.setAttribute('stroke-dasharray', da);
+          else path.removeAttribute('stroke-dasharray');
           path.setAttribute('d', strokePath([f.pt.x, f.pt.y]));
         }
       } else if (tool === 'eraser') {
@@ -329,7 +332,7 @@ export const Panel = memo(function Panel(p: Props) {
       livePath.current?.setAttribute('d', '');
       // 화면 1.5px보다 가까운 점은 버려 저장량을 줄인다
       const { pen, floor } = latest.current;
-      p.onStrokeDone(floor.id, simplify(d.points, 1.5 * d.perPx), pen.width * d.perPx, pen.color);
+      p.onStrokeDone(floor.id, simplify(d.points, 1.5 * d.perPx), pen.width * d.perPx, pen);
     }
   };
 
@@ -359,7 +362,10 @@ export const Panel = memo(function Panel(p: Props) {
       <svg className="draw-layer" aria-hidden style={{ display: p.showDrawings || drawing ? undefined : 'none' }}>
         <g ref={drawGroup}>
           {strokes.map((s) => (
-            <path key={s.id} d={strokePath(s.points)} stroke={s.color} strokeWidth={s.width} />
+            <g key={s.id} opacity={s.opacity ?? 1}>
+              <path d={strokePath(s.points)} stroke={s.color} strokeWidth={s.width} strokeDasharray={dashArray(s.dash, s.width)} />
+              {s.arrow && <path className="arrow-head" d={arrowHeadPath(s.points, s.width)} fill={s.color} />}
+            </g>
           ))}
           <path ref={livePath} d="" />
         </g>
@@ -378,7 +384,7 @@ export const Panel = memo(function Panel(p: Props) {
             aria-label={m.label || MARKER_TYPES[m.type].label}
             tabIndex={drawing ? -1 : undefined}
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerEnter={() => p.onHoverMarker(positions.current.get(m.id) ?? null)}
+            onPointerEnter={() => p.onHoverMarker(positions.current.get(m.id) ?? null, m.id)}
             onPointerLeave={() => p.onHoverMarker(null)}
             onClick={(e) => {
               e.stopPropagation();

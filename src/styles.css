@@ -165,7 +165,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .view-stage.tool-pen { cursor: crosshair; }
 .view-stage.tool-eraser { cursor: cell; }
 .draw-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.draw-layer path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.draw-layer path:not(.arrow-head) { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.draw-layer path.arrow-head { stroke: none; }
 .marker:focus-visible .marker-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
 .marker-label { position: absolute; left: calc(9px * var(--mk-scale, 1) + 4px); top: 0; transform: translateY(-50%); white-space: nowrap; font-size: var(--mk-label, 11px); background: rgba(12, 14, 18, 0.8); padding: 1px 5px; border-radius: 4px; color: var(--text); }
 
@@ -205,9 +206,21 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; border: 1px solid 
 .key-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 12px; align-items: baseline; }
 .key-list dt { white-space: nowrap; color: var(--text); }
 .key-list dd { margin: 0; color: var(--text-dim); }
+.snackbar { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 61; display: flex; align-items: center; gap: 12px; background: rgba(20, 23, 28, 0.96); border: 1px solid var(--line); padding: 8px 10px 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; background: rgba(20, 23, 28, 0.95); border: 1px solid var(--warn); color: var(--warn); padding: 8px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
 
 /* 그리기 도구 */
+.draw-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
+.draw-row .spacer { flex: 1; }
+.pen-editor { padding-top: 8px; border-top: 1px solid var(--line); }
+.preset-list { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.preset { position: relative; display: inline-flex; }
+.preset > button:first-child { display: flex; align-items: center; gap: 4px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px 3px 4px; color: var(--text-dim); font-size: 11px; }
+.preset.on > button:first-child { border-color: var(--accent); color: var(--text); background: var(--accent-dim); }
+.preset-del { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; border: none; background: var(--danger); color: #fff; font-size: 9px; line-height: 16px; padding: 0; }
+.pen-preview { display: block; background: #0c0e12; border-radius: 4px; }
+.range-field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-dim); min-width: 110px; }
+.btn.ghost.on { color: var(--accent); }
 .draw-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 12px; }
 .draw-toolbar .spacer { flex: 1; }
 .draw-hint { margin: 0; width: 100%; }

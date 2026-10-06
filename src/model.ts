@@ -62,6 +62,12 @@ export interface Stroke {
   /** 평탄화한 좌표 [x0, y0, x1, y1, ...] (Yjs 저장량을 줄이려고 배열 하나로). */
   points: number[];
   createdAt: number;
+  /** 불투명도(없으면 1). */
+  opacity?: number;
+  /** 선 모양(없으면 실선). */
+  dash?: 'dash' | 'dot';
+  /** 끝에 화살표. */
+  arrow?: boolean;
 }
 
 export type MarkerOutline = 'dark' | 'light' | 'none';
