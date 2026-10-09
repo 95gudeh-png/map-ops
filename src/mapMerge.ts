@@ -75,15 +75,33 @@ export function mergeMaps(target: GameMap, source: GameMap, now = Date.now()): M
     }
   }
 
+  const sameStroke = (a: Stroke, b: Stroke) =>
+    a.color === b.color && a.points.join() === b.points.join() && (a.floorIds ?? [a.floorId]).join() === (b.floorIds ?? [b.floorId]).join();
+
   for (const s of source.strokes ?? []) {
-    const f = mapFloor(s.floorId);
-    if (!f) {
+    let next: Stroke | null = null;
+    if (s.floorIds) {
+      // 관통 획: 층을 짝짓고, 월드 좌표를 기준층 짝을 통해 옮긴다(굵기도 같은 비율)
+      const ordered = target.floors.map((f) => f.id).filter((id) => s.floorIds!.some((sid) => mapFloor(sid)?.id === id));
+      if (ordered.length && srcAnchor && tgtAnchorTwin) {
+        const pts: number[] = [];
+        for (let i = 0; i + 1 < s.points.length; i += 2) {
+          const w = toTargetWorld({ x: s.points[i]!, y: s.points[i + 1]! })!;
+          pts.push(Math.round(w.x * 100) / 100, Math.round(w.y * 100) / 100);
+        }
+        const k = tgtAnchorTwin.sim.r / srcAnchor.sim.r;
+        next = { ...s, id: newId(), floorId: ordered[0]!, floorIds: ordered, points: pts, width: s.width * k };
+      }
+    } else {
+      const f = mapFloor(s.floorId);
+      if (f) next = { ...s, id: newId(), floorId: f.id };
+    }
+    if (!next) {
       skipped++;
       continue;
     }
-    const dup = strokes.some((t) => t.floorId === f.id && t.color === s.color && t.points.join() === s.points.join());
-    if (!dup) {
-      strokes.push({ ...s, id: newId(), floorId: f.id });
+    if (!strokes.some((t) => sameStroke(t, next))) {
+      strokes.push(next);
       strokesAdded++;
     }
   }

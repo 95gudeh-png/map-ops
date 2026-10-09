@@ -1,6 +1,6 @@
 /** 사용 화면(명세서 §3.6, §4.2). */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { fitView, floorWorldRect, panView, zoomViewAt, type Size, type Vec, type View } from '../geometry';
+import { fitView, floorWorldRect, panView, worldToLocal, zoomViewAt, type Size, type Vec, type View } from '../geometry';
 import { markerWorld } from '../mapOps';
 import { DEFAULT_MARKER_STYLE, MARKER_TYPES, newId, type GameMap, type Id, type Marker, type MarkerStyle } from '../model';
 import { shareManager, useRemoteProbes, useShareState } from '../share/shareManager';
@@ -18,6 +18,7 @@ import {
   normalizePen,
   strokesOnFloor,
   strokeStyleOf,
+  throughFloors,
   type PenPreset,
 } from './drawOps';
 import { DrawToolbar } from './DrawToolbar';
@@ -30,6 +31,7 @@ import { Sidebar } from './Sidebar';
 /* ---------- 기기별 그리기 설정 ---------- */
 const PEN_KEY = 'mapops.pen';
 const SHOW_DRAWINGS_KEY = 'mapops.showDrawings';
+const DRAW_SCOPE_KEY = 'mapops.drawScope';
 const PRESETS_KEY = 'mapops.penPresets';
 function loadPen(): PenSettings {
   try {
@@ -104,6 +106,17 @@ export function ViewerView({ map, onEditMap }: Props) {
   const [tool, setTool] = useState<Tool>('view');
   const [pen, setPen] = useState<PenSettings>(loadPen);
   const [showDrawings, setShowDrawings] = useState(loadShowDrawings);
+  /** 그리기 범위: 이 층만 / 여러 층 관통(기기별로 기억). 관통 대상 층은 이 맵을 보는 동안 유지(기본: 전체). */
+  const [drawThrough, setDrawThrough] = useState<boolean>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(DRAW_SCOPE_KEY) ?? 'null') === 'through';
+    } catch {
+      return false;
+    }
+  });
+  const [drawFloors, setDrawFloors] = useState<Id[]>(() => map.floors.map((f) => f.id));
+  const drawScopeRef = useRef({ drawThrough, drawFloors });
+  drawScopeRef.current = { drawThrough, drawFloors };
   const [confirmClear, setConfirmClear] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -234,11 +247,22 @@ export function ViewerView({ map, onEditMap }: Props) {
 
   /* ---------- 그리기 ---------- */
   const onStrokeDone = useCallback(
-    (floorId: Id, points: Vec[], width: number, pen: PenSettings) => {
+    (floorId: Id, worldPoints: Vec[], worldWidth: number, pen: PenSettings) => {
       const id = newId();
-      repo.saveMap(
-        addStroke(latestMap(), { id, floorId, color: pen.color, width, points: flatten(points), createdAt: Date.now(), ...strokeStyleOf(pen) }),
-      );
+      const m = latestMap();
+      const base = { id, floorId, color: pen.color, createdAt: Date.now(), ...strokeStyleOf(pen) };
+      const { drawThrough: through, drawFloors: chosen } = drawScopeRef.current;
+      const floorIds = through ? throughFloors(m, chosen, floorId) : null;
+      if (floorIds) {
+        // 관통: 월드 좌표 그대로 — 고른 층 모두에 같은 물리 위치로 보인다
+        repo.saveMap(addStroke(m, { ...base, floorIds, width: worldWidth, points: flatten(worldPoints) }));
+      } else {
+        // 단일층: 그 층 이미지 좌표로 — 그 층을 재보정하면 함께 움직인다
+        const floor = m.floors.find((f) => f.id === floorId);
+        if (!floor) return;
+        const local = worldPoints.map((w) => worldToLocal(floor.sim, w));
+        repo.saveMap(addStroke(m, { ...base, width: worldWidth / floor.sim.r, points: flatten(local) }));
+      }
       myStrokes.current.push(id);
       setUndoCount(myStrokes.current.length);
     },
@@ -671,6 +695,15 @@ export function ViewerView({ map, onEditMap }: Props) {
       {styleOpen && <MarkerStylePanel style={liveStyle} onChange={changeStyle} onReset={resetStyle} onClose={() => setStyleOpen(false)} />}
       {tool !== 'view' && (
         <DrawToolbar
+          floors={map.floors}
+          currentFloorIds={split ? [curA, curB] : [curFloor]}
+          drawThrough={drawThrough}
+          drawFloors={drawFloors}
+          onDrawThrough={(v) => {
+            setDrawThrough(v);
+            savePref(DRAW_SCOPE_KEY, v ? 'through' : 'floor');
+          }}
+          onDrawFloors={setDrawFloors}
           tool={tool}
           pen={pen}
           canUndo={canUndo}

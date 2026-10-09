@@ -213,6 +213,12 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; border: 1px solid 
 .draw-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .draw-row .spacer { flex: 1; }
 .pen-editor { padding-top: 8px; border-top: 1px solid var(--line); }
+.scope-row { padding-top: 8px; border-top: 1px solid var(--line); }
+.floor-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.chip.on { border-color: var(--accent); color: var(--text); background: var(--accent-dim); }
+.chip input { margin: 0; }
+.scope-hint { margin: 0; }
 .preset-list { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .preset { position: relative; display: inline-flex; }
 .preset > button:first-child { display: flex; align-items: center; gap: 4px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px 3px 4px; color: var(--text-dim); font-size: 11px; }

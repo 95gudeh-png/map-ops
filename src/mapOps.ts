@@ -43,10 +43,35 @@ export function changeAnchor(map: GameMap, newAnchorId: Id, view?: View): { map:
   const markers = map.markers.map((m) =>
     m.scope.kind === 'through' ? { ...m, scope: { ...m.scope, w: t.world(m.scope.w) } } : m,
   );
+  // 관통 획은 월드 좌표이므로 관통 마커처럼 새 기준으로 옮긴다(굵기도 같은 비율)
+  const rB = target.sim.r;
+  const strokes = map.strokes?.map((s) => {
+    if (!s.floorIds) return s;
+    const pts: number[] = [];
+    for (let i = 0; i + 1 < s.points.length; i += 2) {
+      const w = t.world({ x: s.points[i]!, y: s.points[i + 1]! });
+      pts.push(w.x, w.y);
+    }
+    return { ...s, points: pts, width: s.width / rB };
+  });
   return {
-    map: { ...map, anchorFloorId: newAnchorId, floors, markers },
+    map: { ...map, anchorFloorId: newAnchorId, floors, markers, ...(strokes ? { strokes } : {}) },
     view: view ? t.view(view) : undefined,
   };
+}
+
+/** 층을 지울 때 낙서 정리: 그 층 단일층 획은 삭제, 관통 획은 그 층만 빼고(다 빠지면 삭제). */
+function dropFloorFromStrokes(strokes: Stroke[], floorId: Id): Stroke[] {
+  const out: Stroke[] = [];
+  for (const s of strokes) {
+    if (!s.floorIds) {
+      if (s.floorId !== floorId) out.push(s);
+      continue;
+    }
+    const ids = s.floorIds.filter((id) => id !== floorId);
+    if (ids.length) out.push({ ...s, floorIds: ids, floorId: ids.includes(s.floorId) ? s.floorId : ids[0]! });
+  }
+  return out;
 }
 
 export interface RemoveFloorResult {
@@ -90,7 +115,7 @@ export function removeFloor(map: GameMap, floorId: Id): RemoveFloorResult {
       ...cur,
       floors: cur.floors.filter((f) => f.id !== floorId),
       markers,
-      ...(cur.strokes ? { strokes: cur.strokes.filter((s) => s.floorId !== floorId) } : {}),
+      ...(cur.strokes ? { strokes: dropFloorFromStrokes(cur.strokes, floorId) } : {}),
     },
     removedMarkers,
   };
@@ -130,7 +155,11 @@ export function mergeEditedMap(initial: GameMap, draft: GameMap, current: GameMa
   for (const s of current.strokes ?? []) {
     const d = draftStrokes.get(s.id);
     if (d) strokes.push(d);
-    else if (!initialStrokes.has(s.id) && floorIds.has(s.floorId)) strokes.push(s);
+    else if (initialStrokes.has(s.id)) continue;
+    else if (s.floorIds) {
+      const ids = s.floorIds.filter((id) => floorIds.has(id));
+      if (ids.length) strokes.push({ ...s, floorIds: ids });
+    } else if (floorIds.has(s.floorId)) strokes.push(s);
   }
   return { ...draft, markers, strokes };
 }
@@ -163,11 +192,11 @@ export function replaceFloorImage(
         ? { ...m, scope: { ...m.scope, p: rep.local(m.scope.p) } }
         : m,
     ),
-    // 그 층 낙서도 새 이미지 픽셀로(같은 화면 위치·굵기 유지)
+    // 그 층 단일층 낙서도 새 이미지 픽셀로(같은 화면 위치·굵기 유지). 관통 획은 월드 좌표라 그대로.
     ...(map.strokes
       ? {
           strokes: map.strokes.map((s) =>
-            s.floorId === floorId ? { ...s, width: s.width / k, points: s.points.map((v) => v / k) } : s,
+            !s.floorIds && s.floorId === floorId ? { ...s, width: s.width / k, points: s.points.map((v) => v / k) } : s,
           ),
         }
       : {}),

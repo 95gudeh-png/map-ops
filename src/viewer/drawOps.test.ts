@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { vec } from '../geometry';
-import { mergeEditedMap, removeFloor, replaceFloorImage } from '../mapOps';
+import { changeAnchor, mergeEditedMap, removeFloor, replaceFloorImage } from '../mapOps';
 import type { GameMap, Stroke } from '../model';
 import {
   addStroke,
@@ -11,11 +11,14 @@ import {
   deleteStroke,
   flatten,
   hitStroke,
+  isThrough,
   normalizePen,
   simplify,
+  strokeOnFloor,
   strokePath,
   strokeStyleOf,
   strokesOnFloor,
+  throughFloors,
 } from './drawOps';
 
 const stroke = (id: string, floorId: string, points: number[], width = 4): Stroke => ({ id, floorId, color: '#fff', width, points, createdAt: 0 });
@@ -118,5 +121,52 @@ describe('낙서와 맵 연산', () => {
     const current = addStroke(initial, stroke('friend', 'A', [1, 2, 3, 4]));
     const merged = mergeEditedMap(initial, draft, current);
     expect(merged.strokes!.map((s) => s.id)).toEqual(['s1', 's2', 'friend']);
+  });
+});
+
+describe('관통 획', () => {
+  const through = (id: string, floorIds: string[], points = [10, 10, 50, 50]): Stroke => ({
+    id, floorId: floorIds[0]!, floorIds, color: '#ff0000', width: 4, points, createdAt: 1,
+  });
+
+  it('고른 층 모두에 보이고, 다른 층에는 안 보인다', () => {
+    const m = { ...map(), strokes: [through('t', ['A', 'B'])] };
+    expect(strokesOnFloor(m, 'A').map((s) => s.id)).toEqual(['t']);
+    expect(strokesOnFloor(m, 'B').map((s) => s.id)).toEqual(['t']);
+    expect(isThrough(m.strokes[0]!)).toBe(true);
+    expect(strokeOnFloor(stroke('x', 'A', [0, 0]), 'B')).toBe(false);
+  });
+
+  it('대상 층: 고른 층 + 지금 층, 맵 순서. 하나뿐이면 단일층', () => {
+    expect(throughFloors(map(), ['B'], 'A')).toEqual(['A', 'B']);
+    expect(throughFloors(map(), ['A', 'B'], 'B')).toEqual(['A', 'B']);
+    expect(throughFloors(map(), [], 'A')).toBeNull();
+    expect(throughFloors(map(), ['없는층'], 'A')).toBeNull();
+  });
+
+  it('이 층 낙서 지우기: 관통 획은 이 층에서만 빠진다', () => {
+    const m = { ...map(), strokes: [through('t', ['A', 'B']), through('only', ['A'])] };
+    const r = clearFloorStrokes(m, 'A');
+    expect(r.strokes!.map((s) => [s.id, s.floorIds])).toEqual([['t', ['B']]]);
+    expect(strokesOnFloor(r, 'A')).toHaveLength(0);
+  });
+
+  it('기준층을 바꿔도 관통 획의 화면 위치·굵기가 유지된다', () => {
+    const m = { ...map(), strokes: [through('t', ['A', 'B'], [100, 40])] };
+    const view = { z: 1, pan: vec(0, 0) };
+    const r = changeAnchor(m, 'B', view); // B: r=0.5, d=(0,0)
+    const s = r.map.strokes![0]!;
+    // 화면 = z'·w' + pan' 이 원래 화면(100,40)과 같아야 한다
+    expect(r.view!.z * s.points[0]! + r.view!.pan.x).toBeCloseTo(100);
+    expect(r.view!.z * s.points[1]! + r.view!.pan.y).toBeCloseTo(40);
+    expect(r.view!.z * s.width).toBeCloseTo(4);
+  });
+
+  it('층을 지우면 관통 획에서 그 층만 빠지고, 이미지를 바꿔도 관통 획은 그대로', () => {
+    const m = { ...map(), floors: [...map().floors, { ...map().floors[0]!, id: 'C', name: '3층', imageId: 'c' }], strokes: [through('t', ['A', 'B', 'C'])] };
+    const removed = removeFloor(m, 'C').map;
+    expect(removed.strokes![0]!.floorIds).toEqual(['A', 'B']);
+    const replaced = replaceFloorImage(m, 'B', { imageId: 'b2', w: 1000, h: 800 }).map; // 기준층이 아닌 층
+    expect(replaced.strokes![0]!.points).toEqual([10, 10, 50, 50]);
   });
 });

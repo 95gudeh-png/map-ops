@@ -52,10 +52,17 @@ export interface Marker {
   createdAt: number;
 }
 
-/** 층별 낙서 한 획. 좌표·굵기는 그 층 이미지 픽셀 단위(층과 함께 확대·이동). */
+/**
+ * 낙서 한 획.
+ * - 단일층(floorIds 없음): 좌표·굵기는 그 층 이미지 픽셀 단위(그 층을 재보정하면 함께 움직임).
+ * - 관통(floorIds 있음): 좌표·굵기는 월드 단위이고, floorIds의 모든 층에 같은 물리 위치로 표시(관통 마커와 같은 규칙).
+ */
 export interface Stroke {
   id: Id;
+  /** 그린 층(관통이면 처음 그린 층 — 기록용). */
   floorId: Id;
+  /** 관통 획이 표시될 층들. 있으면 points·width가 월드 좌표. */
+  floorIds?: Id[];
   color: string;
   /** 굵기(층 이미지 픽셀). */
   width: number;

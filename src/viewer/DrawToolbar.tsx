@@ -1,9 +1,16 @@
 import { useState } from 'react';
-import { newId } from '../model';
+import { newId, type Floor, type Id } from '../model';
 import { arrowHeadPath, dashArray, PEN_COLORS, PEN_WIDTH_MAX, PEN_WIDTH_MIN, PEN_WIDTHS, type DashStyle, type PenPreset, type PenSettings } from './drawOps';
 import type { Tool } from './Panel';
 
 interface Props {
+  floors: Floor[];
+  /** 지금 그리는 패널의 층(항상 포함). */
+  currentFloorIds: Id[];
+  drawThrough: boolean;
+  drawFloors: Id[];
+  onDrawThrough: (v: boolean) => void;
+  onDrawFloors: (ids: Id[]) => void;
   tool: Tool;
   pen: PenSettings;
   presets: PenPreset[];
@@ -103,6 +110,43 @@ export function DrawToolbar(p: Props) {
         <button className="btn small primary" onClick={p.onDone} title="D 또는 Esc">
           그리기 끝 <kbd>D</kbd>
         </button>
+      </div>
+
+      <div className="draw-row scope-row">
+        <span className="dim small">범위</span>
+        <div className="seg-inline" role="radiogroup" aria-label="그리기 범위">
+          <button role="radio" aria-checked={!p.drawThrough} className={!p.drawThrough ? 'on' : ''} onClick={() => p.onDrawThrough(false)}>
+            이 층만
+          </button>
+          <button role="radio" aria-checked={p.drawThrough} className={p.drawThrough ? 'on' : ''} onClick={() => p.onDrawThrough(true)} title="고른 층 모두에 같은 자리로 그려지오">
+            여러 층 관통
+          </button>
+        </div>
+        {p.drawThrough && (
+          <div className="floor-chips" aria-label="관통할 층">
+            {p.floors.map((f) => {
+              const current = p.currentFloorIds.includes(f.id);
+              const on = current || p.drawFloors.includes(f.id);
+              return (
+                <label key={f.id} className={`chip ${on ? 'on' : ''}`} title={current ? '지금 그리는 층은 항상 포함되오' : undefined}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={current}
+                    onChange={(e) => p.onDrawFloors(e.target.checked ? [...p.drawFloors, f.id] : p.drawFloors.filter((x) => x !== f.id))}
+                  />
+                  {f.name}
+                </label>
+              );
+            })}
+            <button className="btn small ghost" onClick={() => p.onDrawFloors(p.floors.map((f) => f.id))}>
+              전체
+            </button>
+          </div>
+        )}
+        <span className="hint scope-hint">
+          {p.drawThrough ? '체크한 층 모두에 같은 xy로 그려지오. 지우개로 지우면 모든 층에서 지워지오.' : '지금 층에만 그려지오.'}
+        </span>
       </div>
 
       <div className="draw-row pen-editor">

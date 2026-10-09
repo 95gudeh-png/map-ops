@@ -90,6 +90,8 @@ function checkStroke(s: unknown, i: number, floorIds: Set<string>) {
   if (s.opacity !== undefined && (!isNum(s.opacity) || s.opacity < 0.05 || s.opacity > 1)) fail(`strokes[${i}].opacity`);
   if (s.dash !== undefined && s.dash !== 'dash' && s.dash !== 'dot') fail(`strokes[${i}].dash`);
   if (s.arrow !== undefined && typeof s.arrow !== 'boolean') fail(`strokes[${i}].arrow`);
+  if (s.floorIds !== undefined && (!Array.isArray(s.floorIds) || s.floorIds.length === 0 || !s.floorIds.every((x) => isStr(x) && floorIds.has(x))))
+    fail(`strokes[${i}].floorIds`);
 }
 
 function checkMarkerStyle(st: unknown) {

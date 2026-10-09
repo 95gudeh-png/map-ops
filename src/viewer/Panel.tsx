@@ -15,7 +15,7 @@ import { MARKER_TYPES, markerColor, type Floor, type GameMap, type Id, type Mark
 import type { RemoteProbe } from '../share/session';
 import { FloorImg, simToCss } from '../ui/FloorImg';
 import type { CursorGuideSettings } from './crosshair';
-import { arrowHeadPath, dashArray, hitStroke, simplify, strokePath, type PenSettings } from './drawOps';
+import { arrowHeadPath, dashArray, hitStroke, isThrough, simplify, strokePath, type PenSettings } from './drawOps';
 import { Reticle } from './Reticle';
 
 /** 패널이 등록하는 그리기 함수. paintCursor는 마우스 이동마다 불리므로 커서 가이드만 갱신한다. */
@@ -56,7 +56,8 @@ interface Props {
   onHoverMarker: (w: Vec | null, markerId?: Id) => void;
   onMarkerClick: (m: Marker, floorId: Id) => void;
   /** 획 완성: 층 로컬 좌표와 층 로컬 굵기. */
-  onStrokeDone: (floorId: Id, points: Vec[], width: number, pen: PenSettings) => void;
+  /** 획 완성: 월드 좌표와 월드 굵기(단일층으로 저장할지 관통으로 저장할지는 상위가 정한다). */
+  onStrokeDone: (floorId: Id, worldPoints: Vec[], worldWidth: number, pen: PenSettings) => void;
   onEraseStroke: (id: Id) => void;
   /** 마우스가 이 패널 위에서 움직임(월드 좌표) / 벗어남(null). */
   onCursor: (w: Vec | null, floorId: Id, panelKey: PanelKey) => void;
@@ -78,7 +79,7 @@ const ERASER_RADIUS = 8;
 type Drag =
   | { kind: 'view'; start: Vec; last: Vec; moved: boolean; id: number }
   | { kind: 'pan'; last: Vec; id: number }
-  | { kind: 'pen'; points: Vec[]; perPx: number; id: number } // points: 층 로컬 좌표
+  | { kind: 'pen'; points: Vec[]; perPx: number; id: number } // points: 월드 좌표, perPx: 화면 1px의 월드 길이
   | { kind: 'eraser'; erased: Set<Id>; id: number };
 
 export const Panel = memo(function Panel(p: Props) {
@@ -86,7 +87,8 @@ export const Panel = memo(function Panel(p: Props) {
   const imgEl = useRef<HTMLImageElement | null>(null);
   const ghostEl = useRef<HTMLImageElement | null>(null);
   const crossEl = useRef<HTMLDivElement>(null);
-  const drawGroup = useRef<SVGGElement>(null);
+  const drawGroup = useRef<SVGGElement>(null); // 단일층 획(층 이미지 좌표)
+  const worldGroup = useRef<SVGGElement>(null); // 관통 획·그리는 중인 획(월드 좌표)
   const livePath = useRef<SVGPathElement>(null);
   const markerEls = useRef(new Map<Id, HTMLElement>());
   const remoteEls = useRef(new Map<number, HTMLElement>());
@@ -95,7 +97,9 @@ export const Panel = memo(function Panel(p: Props) {
   const reticleEl = useRef<HTMLDivElement>(null);
 
   const markers = p.map.markers.filter((m) => markerOnFloor(m, p.floor.id));
-  const strokes: Stroke[] = (p.map.strokes ?? []).filter((s) => s.floorId === p.floor.id);
+  const allStrokes = p.map.strokes ?? [];
+  const strokes: Stroke[] = allStrokes.filter((s) => !isThrough(s) && s.floorId === p.floor.id);
+  const throughStrokes: Stroke[] = allStrokes.filter((s) => isThrough(s) && s.floorIds!.includes(p.floor.id));
   const positions = useRef(new Map<Id, Vec>());
   positions.current = new Map(
     markers.flatMap((m) => {
@@ -105,8 +109,8 @@ export const Panel = memo(function Panel(p: Props) {
   );
 
   // 최신 props를 paint·이벤트에서 읽기 위한 참조
-  const latest = useRef({ ...p, strokes });
-  latest.current = { ...p, strokes };
+  const latest = useRef({ ...p, strokes, throughStrokes });
+  latest.current = { ...p, strokes, throughStrokes };
 
   const paintCursor = useCallback(() => {
     const { shared, guide } = latest.current;
@@ -140,6 +144,7 @@ export const Panel = memo(function Panel(p: Props) {
     const floorScreen = simToCss(composeToScreen(v, floor.sim));
     if (imgEl.current) imgEl.current.style.transform = floorScreen;
     if (drawGroup.current) drawGroup.current.setAttribute('transform', floorScreen);
+    if (worldGroup.current) worldGroup.current.setAttribute('transform', `matrix(${v.z},0,0,${v.z},${v.pan.x},${v.pan.y})`);
     if (ghostEl.current && ghost) ghostEl.current.style.transform = simToCss(composeToScreen(v, ghost.sim));
     for (const [id, el] of markerEls.current) {
       const w = positions.current.get(id);
@@ -232,10 +237,21 @@ export const Panel = memo(function Panel(p: Props) {
     return { pt: worldToLocal(s, screenToWorld(v, screen)), perPx: 1 / (v.z * s.r) };
   };
 
+  /** 화면 점 → 월드 좌표, 그리고 화면 1px이 월드로 몇인지(그리는 중인 획은 항상 월드 좌표로 모은다). */
+  const toWorld = (screen: Vec): { pt: Vec; perPx: number } | null => {
+    const v = latest.current.shared.view.current;
+    return v ? { pt: screenToWorld(v, screen), perPx: 1 / v.z } : null;
+  };
+
   const eraseAt = (screen: Vec, erased: Set<Id>) => {
     const f = toFloor(screen);
-    if (!f) return;
-    const id = hitStroke(latest.current.strokes.filter((s) => !erased.has(s.id)), f.pt, ERASER_RADIUS * f.perPx);
+    const v = latest.current.shared.view.current;
+    if (!f || !v) return;
+    const alive = (list: Stroke[]) => list.filter((s) => !erased.has(s.id));
+    // 단일층 획은 층 이미지 좌표, 관통 획은 월드 좌표로 판정
+    const id =
+      hitStroke(alive(latest.current.throughStrokes), screenToWorld(v, screen), ERASER_RADIUS / v.z) ??
+      hitStroke(alive(latest.current.strokes), f.pt, ERASER_RADIUS * f.perPx);
     if (id) {
       erased.add(id);
       latest.current.onEraseStroke(id);
@@ -255,7 +271,7 @@ export const Panel = memo(function Panel(p: Props) {
     } else if (e.button === 0) {
       const tool = latest.current.tool;
       if (tool === 'pen') {
-        const f = toFloor(pt);
+        const f = toWorld(pt);
         if (!f) return;
         drag.current = { kind: 'pen', points: [f.pt], perPx: f.perPx, id };
         const path = livePath.current;
@@ -308,7 +324,7 @@ export const Panel = memo(function Panel(p: Props) {
         d.last = pt;
         break;
       case 'pen': {
-        const f = toFloor(pt);
+        const f = toWorld(pt);
         if (!f) break;
         d.points.push(f.pt);
         livePath.current?.setAttribute('d', strokePath(d.points.flatMap((q) => [q.x, q.y])));
@@ -336,6 +352,14 @@ export const Panel = memo(function Panel(p: Props) {
     }
   };
 
+  /** 획 하나(좌표 단위는 들어 있는 그룹을 따른다: 단일층=층 이미지, 관통=월드). */
+  const renderStroke = (s: Stroke) => (
+    <g key={s.id} opacity={s.opacity ?? 1} className={isThrough(s) ? 'through-stroke' : undefined}>
+      <path d={strokePath(s.points)} stroke={s.color} strokeWidth={s.width} strokeDasharray={dashArray(s.dash, s.width)} />
+      {s.arrow && <path className="arrow-head" d={arrowHeadPath(s.points, s.width)} fill={s.color} />}
+    </g>
+  );
+
   const drawing = p.tool !== 'view';
   const colorOf = (m: Marker) => markerColor(p.map.markerStyle, m.type);
   const g = p.guide;
@@ -360,13 +384,9 @@ export const Panel = memo(function Panel(p: Props) {
       <FloorImg floor={p.floor} register={registerImg} />
       {p.ghost && <FloorImg floor={p.ghost} register={registerGhost} className="ghost" />}
       <svg className="draw-layer" aria-hidden style={{ display: p.showDrawings || drawing ? undefined : 'none' }}>
-        <g ref={drawGroup}>
-          {strokes.map((s) => (
-            <g key={s.id} opacity={s.opacity ?? 1}>
-              <path d={strokePath(s.points)} stroke={s.color} strokeWidth={s.width} strokeDasharray={dashArray(s.dash, s.width)} />
-              {s.arrow && <path className="arrow-head" d={arrowHeadPath(s.points, s.width)} fill={s.color} />}
-            </g>
-          ))}
+        <g ref={drawGroup}>{strokes.map(renderStroke)}</g>
+        <g ref={worldGroup}>
+          {throughStrokes.map(renderStroke)}
           <path ref={livePath} d="" />
         </g>
       </svg>

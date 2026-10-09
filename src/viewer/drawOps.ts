@@ -110,8 +110,20 @@ export function simplify(points: Vec[], minDist: number): Vec[] {
 export const flatten = (pts: Vec[]): number[] => pts.flatMap((p) => [round2(p.x), round2(p.y)]);
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/** 관통 획인지(좌표가 월드 단위). */
+export const isThrough = (s: Stroke): s is Stroke & { floorIds: Id[] } => Array.isArray(s.floorIds);
+
+/** 이 층에 보이는 획인지(단일층은 그 층, 관통은 floorIds에 포함). */
+export const strokeOnFloor = (s: Stroke, floorId: Id) => (isThrough(s) ? s.floorIds.includes(floorId) : s.floorId === floorId);
+
 export function strokesOnFloor(map: GameMap, floorId: Id): Stroke[] {
-  return (map.strokes ?? []).filter((s) => s.floorId === floorId);
+  return (map.strokes ?? []).filter((s) => strokeOnFloor(s, floorId));
+}
+
+/** 관통 그리기의 대상 층: 고른 층 + 지금 그리는 층, 맵의 층 순서대로. 하나뿐이면 null(단일층으로 그림). */
+export function throughFloors(map: GameMap, selected: Id[], current: Id): Id[] | null {
+  const ids = map.floors.map((f) => f.id).filter((id) => id === current || selected.includes(id));
+  return ids.length > 1 ? ids : null;
 }
 
 export function addStroke(map: GameMap, stroke: Stroke): GameMap {
@@ -122,8 +134,22 @@ export function deleteStroke(map: GameMap, id: Id): GameMap {
   return { ...map, strokes: (map.strokes ?? []).filter((s) => s.id !== id) };
 }
 
+/** 이 층의 낙서를 지운다. 관통 획은 이 층에서만 빠지고 다른 층에는 남는다. */
 export function clearFloorStrokes(map: GameMap, floorId: Id): GameMap {
-  return { ...map, strokes: (map.strokes ?? []).filter((s) => s.floorId !== floorId) };
+  const strokes: Stroke[] = [];
+  for (const s of map.strokes ?? []) {
+    if (!isThrough(s)) {
+      if (s.floorId !== floorId) strokes.push(s);
+      continue;
+    }
+    if (!s.floorIds.includes(floorId)) {
+      strokes.push(s);
+      continue;
+    }
+    const rest = s.floorIds.filter((id) => id !== floorId);
+    if (rest.length) strokes.push({ ...s, floorIds: rest });
+  }
+  return { ...map, strokes };
 }
 
 function distToSegment(p: Vec, ax: number, ay: number, bx: number, by: number): number {
