@@ -23,7 +23,7 @@ import {
 } from './drawOps';
 import { DrawToolbar } from './DrawToolbar';
 import { MarkerForm } from './MarkerForm';
-import { addMarker, deleteMarker, moveMarker, updateMarker, type MarkerInput } from './markerOps';
+import { addMarker, convertMarkerScope, deleteMarker, moveMarker, updateMarker, type MarkerInput } from './markerOps';
 import { MarkerStylePanel } from './MarkerStylePanel';
 import { Panel, type Painter, type PanelKey, type PanelShared, type PenSettings, type Tool } from './Panel';
 import { Sidebar } from './Sidebar';
@@ -142,6 +142,8 @@ export function ViewerView({ map, onEditMap }: Props) {
   const curFloor = valid(activeFloor);
   const curA = valid(floorA);
   const curB = valid(floorB);
+  /** 관통 마커의 기본 층: 단일 보기는 전체, 2단 비교는 지금 보이는 두 층. */
+  const defaultThroughFloors = split ? [...new Set([curA, curB])] : map.floors.map((f) => f.id);
 
   /* ---------- 공유 뷰·십자선 ---------- */
   const view = useRef<View | null>(null);
@@ -655,7 +657,7 @@ export function ViewerView({ map, onEditMap }: Props) {
           </div>
           <dl className="key-list">
             <dt><kbd>D</kbd></dt>
-            <dd>그리기 모드 켜기/끄기 (켜면 펜)</dd>
+            <dd>그리기 모드 켜기/끄기 (켜면 펜) · 긋다가 1초 멈추면 직선</dd>
             <dt><kbd>E</kbd> 누른 채 클릭·끌기</dt>
             <dd>그리기 모드에서 지우개 (떼면 펜으로)</dd>
             <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt>
@@ -790,6 +792,7 @@ export function ViewerView({ map, onEditMap }: Props) {
                 w={form.mode === 'add' ? form.w : (markerWorld(map, form.marker) ?? { x: 0, y: 0 })}
                 originFloorId={form.mode === 'add' ? form.floorId : curFloor}
                 editing={form.mode === 'edit' ? form.marker : undefined}
+                defaultThroughFloors={defaultThroughFloors}
                 onSubmit={submitForm}
                 onCancel={() => setForm(null)}
               />
@@ -810,6 +813,14 @@ export function ViewerView({ map, onEditMap }: Props) {
               setMoving(m);
             }}
             onDelete={setPendingDelete}
+            onConvert={(m, to) => {
+              const before = latestMap();
+              const next = convertMarkerScope(before, m.id, to, { toFloorId: curFloor, floorIds: defaultThroughFloors });
+              if (next === before) return showToast('이 마커는 그렇게 바꿀 수 없소.');
+              repo.saveMap(next);
+              setSelectedMarker(m.id);
+              showToast(to === 'through' ? '관통 마커로 바꿨소. ✎에서 관통할 층을 고칠 수 있소.' : '이 층에만 보이는 마커로 바꿨소.');
+            }}
           />
         )}
       </div>

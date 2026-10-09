@@ -75,11 +75,27 @@ interface Props {
 const CLICK_THRESHOLD = 4;
 /** 지우개 반경(화면 px). */
 const ERASER_RADIUS = 8;
+/** 그리다가 이만큼 멈춰 있으면 직선으로 바꾼다(ms). */
+export const STRAIGHTEN_HOLD_MS = 1000;
+/** 이 거리(화면 px) 이하로만 움직이면 멈춘 것으로 본다. */
+const HOLD_JITTER = 4;
+/** 너무 짧은 획(화면 px)은 직선으로 바꾸지 않는다. */
+const MIN_STRAIGHT_LEN = 12;
 
 type Drag =
   | { kind: 'view'; start: Vec; last: Vec; moved: boolean; id: number }
   | { kind: 'pan'; last: Vec; id: number }
-  | { kind: 'pen'; points: Vec[]; perPx: number; id: number } // points: 월드 좌표, perPx: 화면 1px의 월드 길이
+  | {
+      kind: 'pen';
+      points: Vec[]; // 월드 좌표
+      perPx: number; // 화면 1px의 월드 길이
+      id: number;
+      /** 멈춰 있어서 직선으로 바뀌었는지(이후엔 끝점만 따라감). */
+      straight: boolean;
+      /** 마지막으로 "움직였다"고 본 화면 위치(손떨림 이하는 멈춘 것으로 본다). */
+      stillAt: Vec;
+      timer: number;
+    }
   | { kind: 'eraser'; erased: Set<Id>; id: number };
 
 export const Panel = memo(function Panel(p: Props) {
@@ -237,6 +253,21 @@ export const Panel = memo(function Panel(p: Props) {
     return { pt: worldToLocal(s, screenToWorld(v, screen)), perPx: 1 / (v.z * s.r) };
   };
 
+  /** 펜을 누른 채 STRAIGHTEN_HOLD_MS 동안 멈춰 있으면 시작점→지금 점 직선으로 바꾼다. */
+  const armStraighten = (d: Extract<Drag, { kind: 'pen' }>) => {
+    window.clearTimeout(d.timer);
+    d.timer = window.setTimeout(() => {
+      if (drag.current !== d || d.straight || d.points.length < 2) return;
+      const a = d.points[0]!, b = d.points[d.points.length - 1]!;
+      if (Math.hypot(b.x - a.x, b.y - a.y) / d.perPx < MIN_STRAIGHT_LEN) return;
+      d.straight = true;
+      d.points = [a, b];
+      livePath.current?.setAttribute('d', strokePath([a.x, a.y, b.x, b.y]));
+      stageRef.current?.classList.add('straightened');
+      window.setTimeout(() => stageRef.current?.classList.remove('straightened'), 400);
+    }, STRAIGHTEN_HOLD_MS);
+  };
+
   /** 화면 점 → 월드 좌표, 그리고 화면 1px이 월드로 몇인지(그리는 중인 획은 항상 월드 좌표로 모은다). */
   const toWorld = (screen: Vec): { pt: Vec; perPx: number } | null => {
     const v = latest.current.shared.view.current;
@@ -273,7 +304,9 @@ export const Panel = memo(function Panel(p: Props) {
       if (tool === 'pen') {
         const f = toWorld(pt);
         if (!f) return;
-        drag.current = { kind: 'pen', points: [f.pt], perPx: f.perPx, id };
+        const d: Drag = { kind: 'pen', points: [f.pt], perPx: f.perPx, id, straight: false, stillAt: pt, timer: 0 };
+        drag.current = d;
+        armStraighten(d);
         const path = livePath.current;
         if (path) {
           const pen = latest.current.pen;
@@ -326,7 +359,17 @@ export const Panel = memo(function Panel(p: Props) {
       case 'pen': {
         const f = toWorld(pt);
         if (!f) break;
-        d.points.push(f.pt);
+        if (d.straight) {
+          // 직선 모드: 시작점은 그대로, 끝점만 커서를 따라간다
+          d.points = [d.points[0]!, f.pt];
+        } else {
+          d.points.push(f.pt);
+          // 실제로 움직였으면 "멈춤" 타이머를 다시 센다
+          if (Math.hypot(pt.x - d.stillAt.x, pt.y - d.stillAt.y) > HOLD_JITTER) {
+            d.stillAt = pt;
+            armStraighten(d);
+          }
+        }
         livePath.current?.setAttribute('d', strokePath(d.points.flatMap((q) => [q.x, q.y])));
         break;
       }
@@ -345,6 +388,7 @@ export const Panel = memo(function Panel(p: Props) {
       const v = p.shared.view.current;
       if (v) p.onProbe(screenToWorld(v, d.start), p.floor.id);
     } else if (d.kind === 'pen') {
+      window.clearTimeout(d.timer);
       livePath.current?.setAttribute('d', '');
       // 화면 1.5px보다 가까운 점은 버려 저장량을 줄인다
       const { pen, floor } = latest.current;
@@ -376,6 +420,7 @@ export const Panel = memo(function Panel(p: Props) {
       onPointerLeave={() => p.onCursor(null, p.floor.id, p.panelKey)}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
+        if (drag.current?.kind === 'pen') window.clearTimeout(drag.current.timer);
         drag.current = null;
         livePath.current?.setAttribute('d', '');
       }}

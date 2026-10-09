@@ -9,18 +9,20 @@ interface Props {
   originFloorId: Id;
   /** 수정 모드면 기존 마커. */
   editing?: Marker;
+  /** 관통으로 바꿀 때 기본으로 체크할 층(단일 보기: 전체, 2단 비교: 보이는 두 층). */
+  defaultThroughFloors?: Id[];
   onSubmit: (input: MarkerInput) => void;
   onCancel: () => void;
 }
 
 const TYPES = Object.keys(MARKER_TYPES) as MarkerType[];
 
-export function MarkerForm({ map, w, originFloorId, editing, onSubmit, onCancel }: Props) {
+export function MarkerForm({ map, w, originFloorId, editing, defaultThroughFloors, onSubmit, onCancel }: Props) {
   const [type, setType] = useState<MarkerType>(editing?.type ?? 'objective');
   const [label, setLabel] = useState(editing?.label ?? '');
   const [through, setThrough] = useState(editing ? editing.scope.kind === 'through' : false);
   const [floorIds, setFloorIds] = useState<Id[]>(
-    editing?.scope.kind === 'through' ? editing.scope.floorIds : map.floors.map((f) => f.id),
+    editing?.scope.kind === 'through' ? editing.scope.floorIds : (defaultThroughFloors ?? map.floors.map((f) => f.id)),
   );
   const labelRef = useRef<HTMLInputElement>(null);
   useEffect(() => labelRef.current?.focus(), []);

@@ -1,6 +1,6 @@
 /** 마커 생성·수정·삭제·이동 (명세서 §3.2, §4.2). 순수 함수. */
 import { worldToLocal, type Vec } from '../geometry';
-import { findFloor } from '../mapOps';
+import { findFloor, markerWorld } from '../mapOps';
 import { newId, type GameMap, type Id, type Marker, type MarkerScope, type MarkerType } from '../model';
 
 export interface MarkerInput {
@@ -67,3 +67,27 @@ export function throughFloorsLabel(map: GameMap, m: Marker): string {
     .map((f) => f.name)
     .join('·');
 }
+
+/**
+ * 단일층 ↔ 관통 전환(목록에서 끌어다 놓기). 위치(월드)는 그대로 둔다.
+ * - 관통으로: floorIds(기본 층)를 쓰되 원래 층은 항상 포함. 층이 하나뿐이면 바꾸지 않는다.
+ * - 단일층으로: toFloorId 층의 이미지 좌표로 환산. 층간연결은 관통만 가능하므로 바꾸지 않는다.
+ * 바뀌지 않았으면 같은 맵 객체를 돌려준다.
+ */
+export function convertMarkerScope(map: GameMap, id: Id, to: 'floor' | 'through', opts: { toFloorId: Id; floorIds: Id[] }): GameMap {
+  const m = map.markers.find((x) => x.id === id);
+  if (!m || m.scope.kind === to) return map;
+  const w = markerWorld(map, m);
+  if (!w) return map;
+  if (to === 'floor') {
+    if (m.type === 'connector') return map;
+    const floor = findFloor(map, opts.toFloorId);
+    if (!floor) return map;
+    return { ...map, markers: map.markers.map((x) => (x.id === id ? { ...x, scope: { kind: 'floor', floorId: floor.id, p: worldToLocal(floor.sim, w) } } : x)) };
+  }
+  const origin = m.scope.kind === 'floor' ? m.scope.floorId : opts.toFloorId;
+  const ids = map.floors.map((f) => f.id).filter((fid) => fid === origin || opts.floorIds.includes(fid));
+  if (ids.length < 2) return map;
+  return { ...map, markers: map.markers.map((x) => (x.id === id ? { ...x, scope: { kind: 'through', floorIds: ids, w } } : x)) };
+}
+

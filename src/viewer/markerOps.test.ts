@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { localToWorld, vec } from '../geometry';
 import { markerWorld } from '../mapOps';
 import type { GameMap } from '../model';
-import { addMarker, deleteMarker, moveMarker, throughFloorsLabel, updateMarker } from './markerOps';
+import { addMarker, convertMarkerScope, deleteMarker, moveMarker, throughFloorsLabel, updateMarker } from './markerOps';
 
 const map = (): GameMap => ({
   id: 'm',
@@ -66,5 +66,33 @@ describe('markerOps', () => {
   it('삭제', () => {
     const m = addMarker(map(), base, 'k').map;
     expect(deleteMarker(m, 'k').markers).toHaveLength(0);
+  });
+});
+
+describe('단일층 ↔ 관통 전환(목록 끌어다 놓기)', () => {
+  it('단일층 → 관통: 위치 유지, 기본 층 + 원래 층, 맵 순서', () => {
+    const m = addMarker(map(), base, 'k').map; // 지하(B)의 단일층 마커
+    const r = convertMarkerScope(m, 'k', 'through', { toFloorId: 'A', floorIds: ['C'] });
+    const mk = r.markers[0]!;
+    expect(mk.scope).toEqual({ kind: 'through', floorIds: ['B', 'C'], w });
+    expect(markerWorld(r, mk)).toEqual(w);
+  });
+
+  it('관통 → 단일층: 지금 층의 이미지 좌표로 환산, 위치 유지', () => {
+    const m = addMarker(map(), { ...base, through: true, floorIds: ['A', 'C'] }, 'k').map;
+    const r = convertMarkerScope(m, 'k', 'floor', { toFloorId: 'C', floorIds: [] });
+    const mk = r.markers[0]!;
+    expect(mk.scope.kind).toBe('floor');
+    if (mk.scope.kind === 'floor') expect(mk.scope.floorId).toBe('C');
+    const back = markerWorld(r, mk)!;
+    expect(back.x).toBeCloseTo(w.x);
+    expect(back.y).toBeCloseTo(w.y);
+  });
+
+  it('층간연결은 단일층으로 바꾸지 않고, 관통할 층이 하나뿐이면 그대로', () => {
+    const conn = addMarker(map(), { ...base, type: 'connector' }, 'c').map;
+    expect(convertMarkerScope(conn, 'c', 'floor', { toFloorId: 'A', floorIds: [] })).toBe(conn);
+    const single = addMarker(map(), base, 'k').map;
+    expect(convertMarkerScope(single, 'k', 'through', { toFloorId: 'B', floorIds: [] })).toBe(single);
   });
 });
